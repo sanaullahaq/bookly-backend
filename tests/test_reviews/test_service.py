@@ -81,9 +81,21 @@ class TestReviewService:
     @pytest.mark.asyncio
     async def test_get_all_reviews(self, session, test_user):
         book_service = BookService()
-        book = await book_service.create_book(
+        book_one = await book_service.create_book(
             book_data=BookCreate(
                 title="Reviews Galore",
+                author="Author",
+                publisher="Pub",
+                page_count=100,
+                language="English",
+                published_date="2024-01-01",
+            ),
+            user_uid=test_user.uid,
+            session=session,
+        )
+        book_two = await book_service.create_book(
+            book_data=BookCreate(
+                title="Reviews Galore Two",
                 author="Author",
                 publisher="Pub",
                 page_count=100,
@@ -96,13 +108,13 @@ class TestReviewService:
         service = ReviewService()
         await service.add_review_to_book(
             user_email=test_user.email,
-            book_uid=str(book.uid),
+            book_uid=str(book_one.uid),
             review_data=ReviewCreate(rating=5, review_text="Amazing"),
             session=session,
         )
         await service.add_review_to_book(
             user_email=test_user.email,
-            book_uid=str(book.uid),
+            book_uid=str(book_two.uid),
             review_data=ReviewCreate(rating=2, review_text="Not great"),
             session=session,
         )
