@@ -1,4 +1,4 @@
-# FastAPI Beyond CRUD
+# Bookly Backend - FastAPI Beyond CRUD
 
 A book review API with authentication, Celery background tasks, rate limiting, and a comprehensive test suite.
 
