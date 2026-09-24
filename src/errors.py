@@ -46,6 +46,10 @@ class BookNotFound(BooklyException):
     """Book Not found"""
 
 
+class BookInfoNotFound(BooklyException):
+    """Book Info Not Found via Agent"""
+
+
 class TagNotFound(BooklyException):
     """Tag Not found"""
 
@@ -247,6 +251,17 @@ def register_all_errors(app: FastAPI):
             initial_detail={
                 "message": "Book Not Found",
                 "error_code": "book_not_found",
+            },
+        ),
+    )
+
+    app.add_exception_handler(
+        BookInfoNotFound,
+        create_exception_handler(
+            status_code=status.HTTP_404_NOT_FOUND,
+            initial_detail={
+                "message": "Book Info Not Found",
+                "error_code": "book_info_not_found",
             },
         ),
     )
