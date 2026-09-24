@@ -1,13 +1,21 @@
 from typing import List
+
 from fastapi import APIRouter, Depends, status
-from src.auth.dependencies import AccessTokenBearer, RoleChecker
-from src.books.schemas import BookDetailOut, BookOut, BookCreate, BookUpdate
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.auth.dependencies import AccessTokenBearer, RoleChecker
+from src.books.schemas import (
+    BookCreate,
+    BookDetailOut,
+    BookInfo,
+    BookInfoOut,
+    BookOut,
+    BookUpdate,
+)
 from src.books.service import BookService
 from src.db.main import get_session
 from src.db.models import Book
-from src.errors import BookNotFound
-
+from src.errors import BookInfoNotFound, BookNotFound
 
 book_router = APIRouter()
 book_service = BookService()
@@ -96,3 +104,18 @@ async def delete_book(
         return {}
     else:
         raise BookNotFound()
+
+
+@book_router.get(
+    "/agent/get_book/{title}", response_model=BookInfoOut, dependencies=[role_checker]
+)
+async def get_book_via_agent(
+    title: str,
+    token_details: dict = Depends(access_token_bearer),
+) -> BookInfo:
+    book_info = await book_service.get_book_detail_via_agent(title)
+
+    if not book_info.not_found:
+        return book_info
+    else:
+        raise BookInfoNotFound()

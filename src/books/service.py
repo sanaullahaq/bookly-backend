@@ -1,8 +1,11 @@
+import json
 import uuid
 
+from sqlmodel import desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.books.schemas import BookCreate, BookUpdate
-from sqlmodel import select, desc
+
+from src.books.agent.agent import agent
+from src.books.schemas import BookCreate, BookInfo, BookUpdate
 from src.db.models import Book
 
 
@@ -103,7 +106,9 @@ class BookService:
         book_to_update = await self.get_book(book_uid=book_uid, session=session)
 
         if book_to_update is not None:
-            update_data_dict = update_data.model_dump(exclude_none=True)        # as there are optional fields with None as default
+            update_data_dict = update_data.model_dump(
+                exclude_none=True
+            )  # as there are optional fields with None as default
 
             for k, v in update_data_dict.items():
                 setattr(book_to_update, k, v)
@@ -132,3 +137,12 @@ class BookService:
             return {}
         else:
             return None
+
+    async def get_book_detail_via_agent(self, title: str) -> BookInfo:
+        result = agent.invoke({"messages": [{"role": "user", "content": title}]})
+        # return json.dumps(
+        #     result["structured_response"].model_dump(mode="json"), indent=2
+        # )
+        # print(result)
+        # return json.dumps(result["structured_response"].model_dump(mode="json"), indent=2)
+        return result["structured_response"]
