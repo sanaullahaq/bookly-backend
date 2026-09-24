@@ -1,10 +1,10 @@
+import uuid
 from datetime import date, datetime
 from typing import List, Optional
-import uuid
 
 from pydantic import BaseModel
 
-from src.db.models import Review, Tag
+from src.db.models import Review
 from src.tags.schemas import TagOut
 
 
@@ -48,3 +48,21 @@ class BookOut(BookBase):
 class BookDetailOut(BookOut):
     reviews: List[Review]
     tags: List[TagOut]
+
+
+class BookInfoOut(BaseModel):
+    title: str
+    author: str
+    publisher: str | None = None
+    page_count: int | None = None
+    language: str | None = None
+    published_date: date | None = None
+
+class BookInfo(BaseModel):
+    title: str
+    author: str
+    publisher: str | None = None
+    page_count: int | None = None
+    language: str | None = None
+    published_date: date | None = None
+    not_found: bool = False
