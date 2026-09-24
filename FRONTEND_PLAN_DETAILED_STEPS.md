@@ -76,15 +76,16 @@
   - [3.7 NavBar "Books" link — reconciliation note](#37-navbar-books-link--reconciliation-note)
   - [3.8 Verification — DETAILED SPEC](#38-verification--detailed-spec)
 - [Phase 4 — Reviews + Tags](#phase-4--reviews--tags)
-  - [4.1 Build reviews API helper (`src/features/reviews/api.ts`)](#41-build-reviews-api-helper-srcfeaturesreviewsapits)
-  - [4.2 Create reviews queries/mutations (`src/features/reviews/queries.ts`)](#42-create-reviews-queriesmutations-srcfeaturesreviewsqueriests)
-  - [4.3 Build `<ReviewList />`](#43-build-reviewlist-)
-  - [4.4 Build `<ReviewForm />`](#44-build-reviewform-)
-  - [4.5 Build tags API helper (`src/features/tags/api.ts`)](#45-build-tags-api-helper-srcfeaturestagsapits)
-  - [4.6 Create tags queries/mutations (`src/features/tags/queries.ts`)](#46-create-tags-queriesmutations-srcfeaturestagsqueriests)
-  - [4.7 Build `<TagChips />`](#47-build-tagchips-)
-  - [4.8 Build `<TagsListPage />` (optional admin page)](#48-build-tagslistpage--optional-admin-page)
-  - [4.9 Update router for tags routes (optional)](#49-update-router-for-tags-routes-optional)
+  - [4.1 Build reviews API helper (`src/features/reviews/api.ts`) — ALREADY BUILT (synced from disk)](#41-build-reviews-api-helper-srcfeaturesreviewsapits--already-built-synced-from-disk)
+  - [4.2 Create reviews queries (`src/features/reviews/queries.ts`) — ALREADY BUILT (synced from disk)](#42-create-reviews-queries-srcfeaturesreviewsqueriests--already-built-synced-from-disk)
+  - [4.3 Prerequisite — fix `ReviewCreate` empty-interface lint error](#43-prerequisite--fix-reviewcreate-empty-interface-lint-error)
+  - [4.4 Build `<ReviewList />` — DETAILED SPEC](#44-build-reviewlist---detailed-spec)
+  - [4.5 Build `<ReviewForm />` — DETAILED SPEC](#45-build-reviewform---detailed-spec)
+  - [4.6 Wire Phase 4 into `<BookDetailPage />` — DETAILED SPEC](#46-wire-phase-4-into-bookdetailpage---detailed-spec)
+  - [4.7 Build `<TagChips />` (display-only) — DETAILED SPEC](#47-build-tagchips--display-only--detailed-spec)
+  - [4.8 Tags API + administration — DEFERRED](#48-tags-api--administration--deferred)
+  - [4.9 Router — no changes in Phase 4](#49-router--no-changes-in-phase-4)
+  - [4.10 Verification — DETAILED SPEC](#410-verification--detailed-spec)
 - [Phase 5 — Polish + Tests](#phase-5--polish--tests)
   - [5.1 Loading and empty states](#51-loading-and-empty-states)
   - [5.2 Form validation polish](#52-form-validation-polish)
@@ -190,15 +191,14 @@ src/
       api.ts                # Books axios calls
       queries.ts            # useBooks, useBook, useCreateBook, useUpdateBook, useDeleteBook
     reviews/
-      ReviewList.tsx        # Renders reviews inside BookDetail
-      ReviewForm.tsx        # Add-review form inside BookDetail
-      api.ts                # Reviews axios calls
-      queries.ts            # useAddReview, useDeleteReview
+      ReviewList.tsx        # Renders reviews inside BookDetail — to build (Phase 4 §4.4)
+      ReviewForm.tsx        # Add-review form inside BookDetail — to build (Phase 4 §4.5)
+      api.ts                # Reviews axios calls — BUILT (Phase 4 §4.1)
+      queries.ts            # useAddReview, useDeleteReview — BUILT (Phase 4 §4.2)
     tags/
-      TagsListPage.tsx
-      TagChips.tsx          # Renders tags on BookDetail + add/remove
-      api.ts                # Tags axios calls
-      queries.ts            # useTags, useCreateTag, useAddTagsToBook, useUpdateTag, useDeleteTag
+      TagChips.tsx          # Display-only chips (borrows tags from BookDetailOut) — to build (Phase 4 §4.7)
+      api.ts                # Empty placeholder — DEFERRED (Phase 4 §4.8); no tags calls yet
+      queries.ts            # Not created — DEFERRED (Phase 4 §4.8); no Tag add/remove, no TagsListPage
   components/
     Layout.tsx              # NavBar + <Outlet />
     NavBar.tsx              # Links — conditional on auth state
@@ -1811,7 +1811,7 @@ import ResetAccountPassword from "./features/auth/ResetAccountPassword";
 
 ### 2.8 Build shared components — DETAILED SPEC
 
-Four shared components live in `src/components/`. All four now exist on disk (synced from the codebase). `<Layout />` is **wired into `App.tsx`** (App renders `<Layout />`, so the NavBar + `main` + `<Outlet />` shell wraps every route). `<ProtectedRoute />` is built here and **mounted in Phase 3 §3.6** as a pathless layout route wrapping the books routes — until then the auth routes remain public children of `<App />`. A **fifth** shared component, `<ConfirmDialog />`, is added in Phase 3 §3.5 (reused there for book-delete and later in Phase 4 for review/tag confirmation).
+Four shared components live in `src/components/`. All four now exist on disk (synced from the codebase). `<Layout />` is **wired into `App.tsx`** (App renders `<Layout />`, so the NavBar + `main` + `<Outlet />` shell wraps every route). `<ProtectedRoute />` is built here and **mounted in Phase 3 §3.6** as a pathless layout route wrapping the books routes — until then the auth routes remain public children of `<App />`. A **fifth** shared component, `<ConfirmDialog />`, is added in Phase 3 §3.5 (reused there for book-delete and later in Phase 4 for review-delete confirmation — Phase 4 has no tag deletion, see §4.7/§4.8).
 
 **Files touched:**
 
@@ -2208,7 +2208,7 @@ export const useDeleteBook = () => {
 
 Design decisions:
 - `useBooks()` query; branch on `isLoading` → `<Loading />`, `isError` → `<ErrorMessage />`, empty list → empty-state CTA, else grid of cards.
-- Each card is a `<Link to={/books/${book.uid}}>` showing title, author, publisher, language, and tag chips (`book.tags.map`). Phase 4 replaces the inline chips with the shared `<TagChips />`.
+- Each card is a `<Link to={/books/${book.uid}}>` showing title, author, publisher, language, and tag chips (`book.tags.map`). Phase 4 replaces the inline chips with the shared `<TagChips />` (§4.7).
 - A prominent "Create Book" button → `/books/new`.
 - Page shell: the `Layout` (NavBar) already wraps all routes via `App`, so this page only renders its content column.
 
@@ -2500,7 +2500,7 @@ Design decisions:
 
 ### 3.5 Build `<ConfirmDialog />` + `<BookDetailPage />` — DETAILED SPEC
 
-Phase 3 adds the **fifth shared component** `<ConfirmDialog />` (reused later in Phase 4 for review/tag deletes) and uses it on `BookDetailPage` for the delete action.
+Phase 3 adds the **fifth shared component** `<ConfirmDialog />` (reused later in Phase 4 for review deletes — Phase 4 has no tag deletion, §4.8) and uses it on `BookDetailPage` for the delete action.
 
 #### 3.5.1 `<ConfirmDialog />` (reusable shared component)
 
@@ -2781,43 +2781,55 @@ The `NavBar` already renders a "Books" link pointing to `/books` (built in §2.8
 ---
 
 ## Phase 4 — Reviews + Tags
-Reviews + Tags: add/delete reviews inline on BookDetail, TagChips with add/remove, full tag CRUD
+Reviews are added/deleted **inline on `BookDetailPage`**. Tags are **display-only**: the frontend renders exactly what the backend returns (`book.tags`) — no add/remove UI, no tags API helpers, no `TagsListPage`/`/tags` route. All tag *administration* is **deferred** (§4.8). Reviews and tags are both nested inside `BookDetailOut`, so every review mutation invalidates the book detail query (§4.2); nothing here touches `bookKeys.all` except book CRUD (§3.2).
 
-### 4.1 Build reviews API helper (`src/features/reviews/api.ts`)
+### 4.1 Build reviews API helper (`src/features/reviews/api.ts`) — ALREADY BUILT (synced from disk)
 
 | Function | Backend route | Auth required | Request body | Response |
 |---|---|---|---|---|
 | `getReviews()` | `GET /reviews/` | Admin only | — | `ReviewOut[]` |
 | `getReview(uid)` | `GET /reviews/{uid}` | User/Admin | — | `ReviewOut` |
-| `addReview(bookUid, data)` | `POST /reviews/book/{book_uid}` | User/Admin | `ReviewCreate` | `ReviewOut` |
-| `deleteReview(uid)` | `DELETE /reviews/{uid}` | User/Admin | — | 204 |
+| `addReview(bookUid, data)` | `POST /reviews/book/{book_uid}` | User/Admin | `ReviewCreate` | raw `Review` |
+| `deleteReview(uid)` | `DELETE /reviews/{uid}` | User/Admin | — | 204 (empty) |
+
+Disk content (`src/features/reviews/api.ts`, `PREFIX` convention as in §2.1/§3.1):
 
 ```ts
 import apiClient from "../../lib/apiClient";
-import type { ReviewOut, ReviewCreate } from "../../types/reviews";
+import type { ReviewCreate, ReviewOut } from "../../types/reviews";
 
-export const getReviews = () => apiClient.get<ReviewOut[]>("/reviews/");
+const PREFIX = "reviews";
+
+//Reviews
+export const getReviews = () => apiClient.get<ReviewOut[]>(`/${PREFIX}/`);
 
 export const getReview = (uid: string) =>
-  apiClient.get<ReviewOut>(`/reviews/${uid}`);
+  apiClient.get<ReviewOut>(`/${PREFIX}/${uid}`);
 
-export const addReview = (bookUid: string, data: ReviewCreate) =>
-  apiClient.post<ReviewOut>(`/reviews/book/${bookUid}`, data);
+export const addReview = (book_uid: string, review_data: ReviewCreate) =>
+  apiClient.post<ReviewOut>(`${PREFIX}/book/${book_uid}`, review_data);
 
 export const deleteReview = (uid: string) =>
-  apiClient.delete(`/reviews/${uid}`);
+  apiClient.delete(`/${PREFIX}/${uid}`); // return 204, no body
 ```
 
-**Error shapes:**
-- `ReviewNotFound`: 404 `{ message: "Review Not Found", error_code: "review_not_found" }`
-- `InsufficientPermission`: 401 `{ message: "You do not have enough permissions...", error_code: "insufficient_permissions" }`
+Notes:
+- `addReview` uses `` `reviews/book/${book_uid}` `` **without a leading slash**. Axios still resolves it against `baseURL` (`…/api/v1/reviews/book/{uid}`) so it works, but it breaks the shared `/${PREFIX}/` convention used by every sibling helper. **Align it on next touch**: `` `/${PREFIX}/book/${book_uid}` ``.
+- `GET /reviews/` is `List[ReviewOut]` and admin-only; `GET /reviews/{uid}` is `ReviewOut`. Neither is consumed by Phase 4 UI (see §4.2 note).
+- **Backend gap (referenced, not frontend-blocking):** `add_review_to_books` route (`src/reviews/routes.py:41`) has **no `response_model`** — it returns the raw ORM `Review`. Its serialized fields coincide with `ReviewOut` (`uid/rating/review_text/user_uid/book_uid/created_at/updated_at`), so the frontend types hold. Backend cleanup item: add `response_model=ReviewOut`.
 
-### 4.2 Create reviews queries/mutations (`src/features/reviews/queries.ts`)
+**Error shapes (`errors.py`):**
+- `ReviewNotFound`: 404 `{ message: "Review Not Found", error_code: "review_not_found" }`
+- `InsufficientPermission`: 401 `{ message: "You do not have enough permissions to perform this action", error_code: "insufficient_permissions" }`
+- `ReviewAlreadyExists`: **409** `{ message: "Review Already Exists From The Current User", error_code: "review_already_exists" }` — one review per user per book, enforced by the DB unique constraint `uq_reviews_book_user` on `(user_uid, book_uid)` **plus** the service fast-path; the duplicate POST surfaces here as 409 and renders through `<ErrorMessage />`.
+- SlowAPI `429` returns a non-standard `{ "detail": ... }` body → `parseApiError` falls back to the generic message (same as auth/books).
+
+### 4.2 Create reviews queries (`src/features/reviews/queries.ts`) — ALREADY BUILT (synced from disk)
 
 ```ts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { addReview, deleteReview } from "./api";
 import type { ReviewCreate } from "../../types/reviews";
+import { addReview, deleteReview } from "./api";
 import { bookKeys } from "../books/queries";
 
 export const useAddReview = (bookUid: string) => {
@@ -2841,145 +2853,336 @@ export const useDeleteReview = (bookUid: string) => {
 };
 ```
 
-**Note:** Reviews are nested inside `BookDetailOut` (the `GET /books/{uid}` response includes `reviews: ReviewOut[]`). There is no standalone reviews list page for users — reviews are displayed inline on `<BookDetailPage />`. The `GET /reviews/` (admin-only) endpoint exists but is optional for Phase 4.
+Design decisions:
+- **Invalidation is detail-only.** Reviews live exclusively inside `BookDetailOut` (nested `reviews: ReviewOut[]` on `GET /books/{uid}`); `BookOut` list items carry **no** reviews. Invalidating `bookKeys.detail(bookUid)` after add/delete refetches the detail query, and the components re-render from the updated `book.reviews` prop. `bookKeys.all` is intentionally *not* touched (would refetch the list for zero UI difference).
+- Mutations are called with `mutateAsync` (same convention as books §3.2).
+- `getReviews()` (admin list) and `getReview(uid)` (§4.1) ship as API helpers but no Phase 4 component consumes them — there is **no standalone reviews page** for users; reviews render inline on `BookDetailPage`.
 
-### 4.3 Build `<ReviewList />`
+### 4.3 Prerequisite — fix `ReviewCreate` empty-interface lint error
+
+`src/types/reviews.ts` currently defines `export interface ReviewCreate extends ReviewBase {}`. That empty interface triggers the pre-existing `npm run lint` error at `types/reviews.ts:15` (`@typescript-eslint/no-empty-interface`). The backend `ReviewCreate` is literally `ReviewBase` (schemas.py), so the correct shape is a type alias:
+
+```ts
+export type ReviewCreate = ReviewBase;
+```
+
+`ReviewBase`/`ReviewOut` stay as-is (they already mirror `schemas.py` exactly, including `user_uid: string | null` and `book_uid: string | null`).
+
+### 4.4 Build `<ReviewList />` — DETAILED SPEC
 
 **File:** `src/features/reviews/ReviewList.tsx`
 
-- Accept `reviews: ReviewOut[]` prop (from `BookDetailOut.reviews`)
-- Render each review: rating (as stars or number), `review_text`, user UID, created_at
-- If the current user owns the review (`user.uid === review.user_uid`), show a delete button
-- Delete button: confirmation → `useDeleteReview(bookUid).mutateAsync(review.uid)`
+Design decisions:
+- Props `{ bookUid: string; reviews: ReviewOut[] }` — **presentational**: receives `reviews` from the parent's `useBook(uid)` data (`book.reviews`). After an add/delete mutation invalidates `bookKeys.detail(bookUid)`, the parent query refetches and this component re-renders with fresh props; it never fetches itself.
+- Current user via `useAuth()` (Zustand selector): `const { user } = useAuth();` and the delete affordance renders only when `user?.uid === review.user_uid`. `user_uid` is `string | null`, so the comparison is `user?.uid === review.user_uid`.
+- Rating rendered as five lucide `Star` icons: filled (`fill="currentColor"` + `text-amber-400`) up to `review.rating`, `text-gray-300` beyond.
+- `created_at` formatted with `toLocaleDateString("en-US", { year, month: "short", day: "numeric" })` (raw ISO in the payload).
+- Delete reuses the shared `<ConfirmDialog />` (§3.5.1 — modal, focus-on-open, **Escape cancels**): local `reviewToDelete: ReviewOut | null` state; confirm → `useDeleteReview(bookUid).mutateAsync(uid)`; cancel/Escape → close without deleting.
+- Delete errors render above the list via `<ErrorMessage error={deleteMutation.error} />` (401 `insufficient_permissions` etc.).
+- Empty state: "No reviews yet. Be the first!"
 
-### 4.4 Build `<ReviewForm />`
+```tsx
+import { useState } from "react";
+import { Star, Trash2 } from "lucide-react";
+import type { ReviewOut } from "../../types/reviews";
+import { useAuth } from "../auth/useAuth";
+import { useDeleteReview } from "./queries";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import ErrorMessage from "../../components/ErrorMessage";
+
+export default function ReviewList({
+  bookUid,
+  reviews,
+}: {
+  bookUid: string;
+  reviews: ReviewOut[];
+}) {
+  const { user } = useAuth();
+  const deleteMutation = useDeleteReview(bookUid);
+  const [reviewToDelete, setReviewToDelete] = useState<ReviewOut | null>(null);
+
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-lg font-semibold text-gray-900">Reviews</h2>
+
+      {deleteMutation.isError && (
+        <div className="mb-4">
+          <ErrorMessage error={deleteMutation.error} />
+        </div>
+      )}
+
+      {reviews.length === 0 ? (
+        <p className="text-sm text-gray-500">No reviews yet. Be the first!</p>
+      ) : (
+        <ul className="space-y-3">
+          {reviews.map((review) => (
+            <li
+              key={review.uid}
+              className="rounded-lg border border-gray-200 bg-white p-4"
+            >
+              <div className="mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star
+                      key={i}
+                      size={14}
+                      className={
+                        i < review.rating ? "text-amber-400" : "text-gray-300"
+                      }
+                      fill={i < review.rating ? "currentColor" : "none"}
+                    />
+                  ))}
+                </div>
+                {user?.uid === review.user_uid && (
+                  <button
+                    type="button"
+                    onClick={() => setReviewToDelete(review)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                )}
+              </div>
+              <p className="text-sm text-gray-700">{review.review_text}</p>
+              <p className="mt-2 text-xs text-gray-400">
+                {new Date(review.created_at).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={reviewToDelete !== null}
+        title="Delete review?"
+        message="Are you sure you want to delete your review? This can't be undone."
+        confirmLabel="Delete"
+        onCancel={() => setReviewToDelete(null)}
+        onConfirm={async () => {
+          if (!reviewToDelete) return;
+          const uid = reviewToDelete.uid;
+          setReviewToDelete(null);
+          await deleteMutation.mutateAsync(uid);
+        }}
+      />
+    </section>
+  );
+}
+```
+
+### 4.5 Build `<ReviewForm />` — DETAILED SPEC
 
 **File:** `src/features/reviews/ReviewForm.tsx`
 
-- Accept `bookUid: string` prop
-- Fields: `rating` (select 1–5, backend validates `Field(le=5)`), `review_text` (textarea)
-- On submit: `useAddReview(bookUid).mutateAsync({ rating, review_text })`
-- On success: clear form, review appears in list (via query invalidation)
-- Show error via `<ErrorMessage />` if submission fails
+Design decisions:
+- Props `{ bookUid: string }`. Single form, mounted once on the detail page.
+- **Star-tap rating input** (not a `<select>`): five `<button type="button">` star controls set `rating` (1–5); filled at `value <= rating`. Hover preview is *not* implemented (keep the star state simple); the chosen value shows inline as `4/5`, or "Tap to rate" when unset (`rating === 0`).
+- Submit guard (mirrors the `ReviewBase` constraint `rating: int = Field(ge=1, le=5)`): `rating === 0` → "Please select a rating."; blank `review_text` → "Please write a review." Both `return` before firing — no network request on invalid submit (BookForm pattern §3.4). `textarea` `required` keeps the browser gate in place too.
+- `useAddReview(bookUid)`; on success reset `rating` + `reviewText`; the list updates via the detail-invalidation (§4.2).
+- Errors via `<ErrorMessage />`: this cleanly renders the **409 `review_already_exists`** duplicate case ("Review Already Exists From The Current User") and any 401/500. No special-casing — `parseApiError` handles the payload.
+- Disabled while pending with `aria-busy`, label flips to "Posting…".
+- Cross-feature import: `features/reviews/*` components are mounted by `features/books/BookDetailPage` (both under `features/`, per the §1.5 tree).
 
-### 4.5 Build tags API helper (`src/features/tags/api.ts`)
+```tsx
+import { useState, type SyntheticEvent } from "react";
+import { Star } from "lucide-react";
+import type { ReviewCreate } from "../../types/reviews";
+import { useAddReview } from "./queries";
+import ErrorMessage from "../../components/ErrorMessage";
+
+export default function ReviewForm({ bookUid }: { bookUid: string }) {
+  const addMutation = useAddReview(bookUid);
+  const [rating, setRating] = useState(0);
+  const [reviewText, setReviewText] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  async function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (rating === 0) {
+      setValidationError("Please select a rating.");
+      return;
+    }
+    if (!reviewText.trim()) {
+      setValidationError("Please write a review.");
+      return;
+    }
+
+    setValidationError(null);
+
+    const data: ReviewCreate = { rating, review_text: reviewText.trim() };
+    await addMutation.mutateAsync(data);
+    setRating(0);
+    setReviewText("");
+  }
+
+  return (
+    <section className="mt-8 rounded-lg border border-gray-200 bg-white p-4">
+      <h2 className="mb-3 text-lg font-semibold text-gray-900">Add a review</h2>
+
+      {(addMutation.isError || validationError) && (
+        <div className="mb-4">
+          <ErrorMessage
+            error={
+              addMutation.isError
+                ? addMutation.error
+                : { message: validationError ?? "", error_code: "validation" }
+            }
+          />
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="flex items-center gap-1">
+          {Array.from({ length: 5 }, (_, i) => {
+            const value = i + 1;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRating(value)}
+                aria-label={`Rate ${value} star${value > 1 ? "s" : ""}`}
+                // Rate 1 star(s)
+                className={value <= rating ? "text-amber-400" : "text-gray-300"}
+              >
+                <Star
+                  size={20}
+                  fill={value <= rating ? "currentColor" : "none"}
+                />
+              </button>
+            );
+          })}
+          <span className="ml-2 text-xs text-gray-500">
+            {rating === 0 ? "Tap to rate" : `${rating}/5`}
+          </span>
+        </div>
+
+        <textarea
+          value={reviewText}
+          onChange={(e) => setReviewText(e.target.value)}
+          required
+          rows={3}
+          placeholder="What did you think?"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+        />
+
+        <button
+          type="submit"
+          disabled={addMutation.isPending}
+          aria-busy={addMutation.isPending}
+          className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {addMutation.isPending ? "Posting…" : "Post Review"}
+        </button>
+      </form>
+    </section>
+  );
+}
+```
+
+### 4.6 Wire Phase 4 into `<BookDetailPage />` — DETAILED SPEC
+
+**File:** `src/features/books/BookDetailPage.tsx`
+
+Replace the three Phase-4 placeholder comments (currently `{/* -- Phase 4: ... -- */}` after the metadata box) with the real components, plus three imports:
+
+```tsx
+import TagChips from "../tags/TagChips";
+import ReviewList from "../reviews/ReviewList";
+import ReviewForm from "../reviews/ReviewForm";
+```
+
+```tsx
+      </div>
+      {/* -- Phase 3 metadata box ends above -- */}
+
+      <div className="mt-6">
+        <TagChips tags={book.tags} />
+      </div>
+      <ReviewList bookUid={uid} reviews={book.reviews} />
+      <ReviewForm bookUid={uid} />
+```
+
+- `uid` is non-`null` at this point (guarded by `if (!uid) return <Navigate …/>`, §3.5.2), so `bookUid={uid}` needs no `!`.
+- `book.reviews` and `book.tags` come straight from `BookDetailOut`; add/delete review mutations invalidate `bookKeys.detail(uid)` → `useBook` refetches → props refresh automatically. No local state fork of the lists.
+- No other page changes: the metadata box, Edit/Delete header row and the book-delete `<ConfirmDialog />` stay exactly as in §3.5.2.
+
+### 4.7 Build `<TagChips />` (display-only) — DETAILED SPEC
+
+**File:** `src/features/tags/TagChips.tsx`
+
+Scope decision (agreed): **render-only** — "the frontend renders what is found from the backend." No add input, no remove button.
+
+```tsx
+import type { TagOut } from "../../types/tags";
+
+export default function TagChips({ tags }: { tags: TagOut[] }) {
+  if (tags.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tags.map((tag) => (
+        <span
+          key={tag.uid}
+          className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700"
+        >
+          {tag.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+```
+
+Design decisions:
+- Props `{ tags: TagOut[] }` only — no `bookUid` (no API calls here). Renders `book.tags`/`book-out.tags` whichever the parent passes.
+- Empty list → renders `null` (cleanest; the parent decides whether to show a "No tags" line).
+- Reused in **two** places (fulfils the §3.3 note that "Phase 4 replaces the inline chips with the shared `<TagChips />`"):
+  1. `BooksListPage` cards — replace the inline `book.tags.map(...)` chip block with `<TagChips tags={book.tags} />`.
+  2. `BookDetailPage` — mount above the reviews (§4.6).
+- If the book has no tags, the wrapper `<div className="mt-6">` on the detail page renders empty below the metadata box — acceptable (no visible gap beyond normal section spacing).
+
+**Why removal is out of scope:** the backend has **no per-book tag-removal endpoint**. `DELETE /tags/{tag_uid}` deletes the `Tag` **globally** (removed from every book at once) — not what a per-book "x" means. Adding that UI now would either lie about the semantics or silently delete shared tags. When real tag administration lands (§4.8), an `add`/per-book-remove flow can be designed against a proper backend endpoint.
+
+### 4.8 Tags API + administration — DEFERRED
+
+Deliberately **not built in Phase 4** (agreed scope). On disk: `src/features/tags/api.ts` is an **empty file**; `src/features/tags/queries.ts` does **not** exist. No `TagChips` add/remove, no `TagsListPage`, no `/tags` route.
+
+Reference contract preserved here for when tag administration is picked up:
 
 | Function | Backend route | Auth required | Request body | Response |
 |---|---|---|---|---|
 | `getTags()` | `GET /tags/` | User/Admin | — | `TagOut[]` |
-| `createTag(data)` | `POST /tags/` | User/Admin | `{ name }` | `TagOut` |
+| `createTag(data)` | `POST /tags/` | User/Admin | `{ name }` | `TagOut` (201) |
 | `addTagsToBook(bookUid, data)` | `POST /tags/book/{book_uid}/tags` | User/Admin | `{ tags: [{ name }] }` | `BookOut` |
 | `updateTag(uid, data)` | `PUT /tags/{uid}` | User/Admin | `{ name }` | `TagOut` |
-| `deleteTag(uid)` | `DELETE /tags/{uid}` | User/Admin | — | 204 |
+| `deleteTag(uid)` | `DELETE /tags/{uid}` | User/Admin | — | 204 (empty; deletes the tag **globally**) |
 
-```ts
-import apiClient from "../../lib/apiClient";
-import type { TagOut, TagCreate, TagAdd, BookOut } from "../../types/tags";
+Error shapes: `TagNotFound` 404 `{ message: "Tag Not Found", error_code: "tag_not_found" }`; `TagAlreadyExists` 403 `{ message: "Tag Already exists", error_code: "tag_exists" }`.
 
-export const getTags = () => apiClient.get<TagOut[]>("/tags/");
+Deferred queries sketch (would-be invalidation targets): global ops `getTags/createTag/updateTag/deleteTag` invalidate `tagKeys.all` (`["tags"]`); `addTagsToBook(bookUid)` invalidates **both** `bookKeys.detail(bookUid)` and `bookKeys.all` (list cards render chips too).
 
-export const createTag = (data: TagCreate) =>
-  apiClient.post<TagOut>("/tags/", data);
+### 4.9 Router — no changes in Phase 4
 
-export const addTagsToBook = (bookUid: string, data: TagAdd) =>
-  apiClient.post<BookOut>(`/tags/book/${bookUid}/tags`, data);
+`src/router.tsx` stays exactly as wired in §3.6 (public auth routes + `ProtectedRoute`-wrapped books routes). Reviews gain no routes (they render inline on `/books/:uid`); tags gain no routes (§4.8 deferred). Re-verified: no `TagsListPage` import, no `/tags` path.
 
-export const updateTag = (uid: string, data: TagCreate) =>
-  apiClient.put<TagOut>(`/tags/${uid}`, data);
+### 4.10 Verification — DETAILED SPEC
 
-export const deleteTag = (uid: string) =>
-  apiClient.delete(`/tags/${uid}`);
-```
-
-**Error shapes:**
-- `TagNotFound`: 404 `{ message: "Tag Not Found", error_code: "tag_not_found" }`
-- `TagAlreadyExists`: 403 `{ message: "Tag Already exists", error_code: "tag_exists" }`
-
-### 4.6 Create tags queries/mutations (`src/features/tags/queries.ts`)
-
-```ts
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getTags, createTag, addTagsToBook, updateTag, deleteTag } from "./api";
-import type { TagCreate, TagAdd } from "../../types/tags";
-import { bookKeys } from "../books/queries";
-
-export const tagKeys = {
-  all: ["tags"] as const,
-};
-
-export const useTags = () =>
-  useQuery({
-    queryKey: tagKeys.all,
-    queryFn: async () => {
-      const { data } = await getTags();
-      return data;
-    },
-  });
-
-export const useCreateTag = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: TagCreate) => createTag(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: tagKeys.all }),
-  });
-};
-
-export const useAddTagsToBook = (bookUid: string) => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: TagAdd) => addTagsToBook(bookUid, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: bookKeys.detail(bookUid) });
-      qc.invalidateQueries({ queryKey: bookKeys.all });
-    },
-  });
-};
-
-export const useUpdateTag = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ uid, data }: { uid: string; data: TagCreate }) =>
-      updateTag(uid, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: tagKeys.all }),
-  });
-};
-
-export const useDeleteTag = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (uid: string) => deleteTag(uid),
-    onSuccess: () => qc.invalidateQueries({ queryKey: tagKeys.all }),
-  });
-};
-```
-
-### 4.7 Build `<TagChips />`
-
-**File:** `src/features/tags/TagChips.tsx`
-
-- Accept `bookUid: string` and `tags: TagOut[]` props
-- Render each tag as a chip/badge with its name
-- Include an "Add Tag" button that opens a small inline form:
-  - Input field for tag name
-  - Submit calls `useAddTagsToBook(bookUid).mutateAsync({ tags: [{ name }] })`
-  - If tag already exists on the book, backend handles deduplication via the many-to-many join
-- Each chip has an "x" remove button → call `deleteTag(uid)` or `addTagsToBook` with remaining tags
-
-### 4.8 Build `<TagsListPage />` (optional admin page)
-
-**File:** `src/features/tags/TagsListPage.tsx`
-
-- Use `useTags()` query to list all tags
-- Each tag shows name + edit/delete buttons
-- Edit: inline form calling `useUpdateTag().mutateAsync({ uid, data: { name } })`
-- Delete: confirmation → `useDeleteTag().mutateAsync(uid)`
-- "Create Tag" form at the top
-
-### 4.9 Update router for tags routes (optional)
-
-```tsx
-{ path: "tags", element: <TagsListPage /> },
-```
+1. `cd bookly-frontend && npm run build` (`tsc -b && vite build`) — clean.
+2. `npm run lint` — clean **including the `types/reviews.ts` fix from §4.3**.
+3. Manual smoke test (backend `fastapi dev src/` on :8000, frontend `npm run dev` on :5173), authenticated verified user with an existing book:
+   - **Rendering:** `/books/{uid}` shows tag chips (if the book has tags) above the reviews section, review list, and "Add a review" form. No add/remove tag controls anywhere.
+   - **Chips:** a book with tags shows chips on its detail page **and** on the `/books` list card (shared `<TagChips />`); a tagless book shows no chip row on either.
+   - **Add review:** tap the 5th star → inline `5/5`; empty review → inline "Please write a review.", **zero network requests**; valid submit → review appears in the list, form resets.
+   - **Duplicate:** submitting a second review for the same book → red banner "Review Already Exists From The Current User" (409).
+   - **Rating render:** list shows the filled-star rating; review text + short date visible.
+   - **Delete own:** own review shows Delete → ConfirmDialog → Escape cancels (no change) → re-open → Delete → review removed, count decreases.
+   - **Others' reviews:** reviews not owned by the logged-in user render **without** a Delete button.
+   - **Empty state:** a book with no reviews → "No reviews yet. Be the first!".
+   - **Login redirect:** logged-out navigation to `/books` still redirects to `/login` (§3.8 unchanged).
 
 ---
 
