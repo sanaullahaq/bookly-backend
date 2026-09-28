@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     USE_CREDENTIALS: bool = True
     VALIDATE_CERTS: bool = True
     DOMAIN: str
+
+    # Book Information Retrieval Agent
+    GOOGLE_API_KEY: str | None = None
+    GOOGLE_BOOKS_API_KEY: str | None = None
+    TAVILY_API_KEY: str | None = None
     
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,4 +1,3 @@
-import os
 import time
 
 import httpx
@@ -11,6 +10,7 @@ from src.books.agent.helpers import (
     _format_results,
     _normalize_date,
 )
+from src.config import Config
 
 GOOGLE_BOOKS_API_URL = "https://www.googleapis.com/books/v1/volumes"
 
@@ -21,7 +21,7 @@ def search_book(title: str) -> str:
     metadata (title, authors, publisher, page count, language, published
     date) for the top matching results."""
     params = {"q": f"intitle:{title}", "maxResults": 5}
-    api_key = os.getenv("GOOGLE_BOOKS_API_KEY")
+    api_key = Config.GOOGLE_BOOKS_API_KEY
     if api_key:
         params["key"] = api_key
 
@@ -130,7 +130,7 @@ def search_book_tavily(title: str) -> str:
     """
 
     try:
-        data = TavilyClient().search(
+        data = TavilyClient(api_key=Config.TAVILY_API_KEY).search(
             query=f"{title} book author publisher page count language original publication date"
         )
     except Exception as e:
