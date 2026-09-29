@@ -34,7 +34,7 @@ async def add_tag(
     tag_data: TagCreate, session: AsyncSession = Depends(get_session)
 ) -> Tag:
 
-    tag_added = await tag_service.add_tag(tag_data=tag_data, session=session)
+    tag_added = await tag_service.create_tag(tag_data=tag_data, session=session)
 
     return tag_added
 

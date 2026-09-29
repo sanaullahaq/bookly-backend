@@ -10,8 +10,8 @@ class TestTagRoutes:
     @pytest.mark.asyncio
     async def test_get_all_tags(self, client, session, auth_headers):
         service = TagService()
-        await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
-        await service.add_tag(tag_data=TagCreate(name="non-fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="non-fiction"), session=session)
         resp = await client.get("/api/v1/tags/", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
@@ -32,7 +32,7 @@ class TestTagRoutes:
     @pytest.mark.asyncio
     async def test_create_duplicate_tag(self, client, session, auth_headers):
         service = TagService()
-        await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         resp = await client.post(
             "/api/v1/tags/",
             json={"name": "fiction"},
@@ -67,7 +67,7 @@ class TestTagRoutes:
     @pytest.mark.asyncio
     async def test_update_tag(self, client, session, auth_headers):
         service = TagService()
-        created = await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        created = await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         resp = await client.put(
             f"/api/v1/tags/{created.uid}",
             json={"name": "sci-fi"},
@@ -89,7 +89,7 @@ class TestTagRoutes:
     @pytest.mark.asyncio
     async def test_delete_tag(self, client, session, auth_headers):
         service = TagService()
-        created = await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        created = await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         resp = await client.delete(
             f"/api/v1/tags/{created.uid}",
             headers=auth_headers,

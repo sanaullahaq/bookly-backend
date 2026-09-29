@@ -133,7 +133,7 @@ class TagService:
         result = await session.exec(statement)
         return result.first()
 
-    async def add_tag(self, tag_data: TagCreate, session: AsyncSession):
+    async def create_tag(self, tag_data: TagCreate, session: AsyncSession):
         tag = await self.get_tag_by_name(tag_name=tag_data.name, session=session)
         if tag is not None:
             raise TagAlreadyExists()

@@ -11,29 +11,29 @@ class TestTagService:
     @pytest.mark.asyncio
     async def test_add_tag(self, session):
         service = TagService()
-        tag = await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        tag = await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         assert tag.name == "fiction"
         assert isinstance(tag.uid, uuid.UUID)
 
     @pytest.mark.asyncio
     async def test_add_tag_duplicate(self, session):
         service = TagService()
-        await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         with pytest.raises(TagAlreadyExists):
-            await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+            await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
 
     @pytest.mark.asyncio
     async def test_get_tags(self, session):
         service = TagService()
-        await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
-        await service.add_tag(tag_data=TagCreate(name="non-fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="non-fiction"), session=session)
         tags = await service.get_tags(session=session)
         assert len(tags) >= 2
 
     @pytest.mark.asyncio
     async def test_get_tag_by_name_found(self, session):
         service = TagService()
-        await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         tag = await service.get_tag_by_name(tag_name="fiction", session=session)
         assert tag is not None
         assert tag.name == "fiction"
@@ -47,7 +47,7 @@ class TestTagService:
     @pytest.mark.asyncio
     async def test_get_tag_by_uid_found(self, session):
         service = TagService()
-        created = await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        created = await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         found = await service.get_tag_by_uid(tag_uid=str(created.uid), session=session)
         assert found is not None
         assert found.name == "fiction"
@@ -94,7 +94,7 @@ class TestTagService:
     @pytest.mark.asyncio
     async def test_update_tag(self, session):
         service = TagService()
-        created = await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        created = await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         updated = await service.update_tag(
             tag_uid=str(created.uid),
             tag_update_data=TagCreate(name="sci-fi"),
@@ -115,7 +115,7 @@ class TestTagService:
     @pytest.mark.asyncio
     async def test_delete_tag(self, session):
         service = TagService()
-        created = await service.add_tag(tag_data=TagCreate(name="fiction"), session=session)
+        created = await service.create_tag(tag_data=TagCreate(name="fiction"), session=session)
         await service.delete_tag(tag_uid=str(created.uid), session=session)
         found = await service.get_tag_by_uid(tag_uid=str(created.uid), session=session)
         assert found is None
