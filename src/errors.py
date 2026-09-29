@@ -261,6 +261,7 @@ def register_all_errors(app: FastAPI):
             status_code=status.HTTP_404_NOT_FOUND,
             initial_detail={
                 "message": "Book Info Not Found",
+                "resolution": "Please enter valid book title",
                 "error_code": "book_info_not_found",
             },
         ),
