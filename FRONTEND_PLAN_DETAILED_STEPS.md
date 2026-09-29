@@ -164,7 +164,7 @@ src/
   App.tsx                   # Root component — renders <Layout /> (NavBar + <Outlet />)
   types/
     users.ts                # UserOut, auth payloads (UserCreate, UserLogin, LoginResponse, UserDetailOut, ...)
-    books.ts                # BookBase/BookCreate/BookUpdate/BookOut/BookDetailOut
+    books.ts                # BookBase/BookCreate/BookUpdate/BookOut/BookDetailOut/BookInfoOut
     reviews.ts              # ReviewBase/ReviewCreate/ReviewOut
     tags.ts                 # TagOut/TagCreate/TagAdd
     apiErrorPayload.ts      # Backend error shape { message, resolution?, error_code }
@@ -324,6 +324,17 @@ export interface BookOut extends BookBase {
 export interface BookDetailOut extends BookOut {
   reviews: ReviewOut[];
   tags: TagOut[];
+}
+
+// --- Agent prefill (GET /books/agent/get_book/{title}) ---
+// Only title/author are guaranteed; the rest are nullable (agent may miss them).
+export interface BookInfoOut {
+  title: string;
+  author: string;
+  publisher?: string | null;
+  page_count?: number | null;
+  language?: string | null;
+  published_date?: string | null; // "YYYY-MM-DD"
 }
 ```
 
@@ -2076,7 +2087,7 @@ Books CRUD: typed API client, TanStack Query hooks with cache invalidation, Book
 | File | Action |
 |---|---|
 | `src/features/books/api.ts` | Create |
-| `src/types/books.ts` | Already built (Phase 1) — `BookBase/BookCreate/BookUpdate/BookOut/BookDetailOut` |
+| `src/types/books.ts` | Already built (Phase 1) — `BookBase/BookCreate/BookUpdate/BookOut/BookDetailOut`; `BookInfoOut` added for §3.2/§3.4 |
 
 Backend contract (verified against `src/books/routes.py`):
 
@@ -2087,10 +2098,12 @@ Backend contract (verified against `src/books/routes.py`):
 | `createBook(data)` | `POST /books/` | Yes | **201** → `BookOut` |
 | `updateBook(uid, data)` | `PATCH /books/{uid}` | Yes | **200** → `BookOut` |
 | `deleteBook(uid)` | `DELETE /books/{uid}` | Yes | **204** (empty body) |
+| `getBookInfoViaAgent(title)` | `GET /books/agent/get_book/{title}` | Yes | **200** → `BookInfoOut` (agent-filled; 404 `book_info_not_found` on miss) |
 
 - Auth: any **verified** user (`RoleChecker(["admin","user"])`). No per-user ownership check on update/delete in this version.
 - `getBook` returns a `BookDetailOut` — nested `reviews` are rendered on the detail page (no standalone reviews list page for users).
 - `deleteBook` returns **204 with no body** — the mutation should not expect `data`.
+- `getBookInfoViaAgent(title)` hits the LangGraph book agent (`src/books/agent/` — Gemini + Google Books / Open Library / Tavily tools). `title` is a **path param**, so it must be `encodeURIComponent`-ed at the call site. Latency is multi-second — the calling component shows a pending state. Returns `BookInfoOut`; on no-match the backend raises 404 `book_info_not_found`.
 
 ```ts
 import apiClient from "../../lib/apiClient";
@@ -2099,6 +2112,7 @@ import type {
   BookDetailOut,
   BookCreate,
   BookUpdate,
+  BookInfoOut,
 } from "../../types/books";
 
 const PREFIX = "books";
@@ -2116,11 +2130,17 @@ export const updateBook = (uid: string, data: BookUpdate) =>
 
 export const deleteBook = (uid: string) =>
   apiClient.delete(`/${PREFIX}/${uid}`); // returns 204, no body
+
+export const getBookInfoViaAgent = (title: string) =>
+  apiClient.get<BookInfoOut>(
+    `/${PREFIX}/agent/get_book/${encodeURIComponent(title)}`
+  );
 ```
 - Same `PREFIX` convention as §2.1 (`const PREFIX = "books"`, no slashes; call sites add them). Note `getBooks`/`createBook` use `` `/${PREFIX}/` `` → `/books/` (trailing slash — the backend's list/create routes), while detail/update/delete use `` `/${PREFIX}/${uid}` `` → `/books/{uid}`. The list return type is `BookOut[]` (a real array, not a tuple).
 
 **Error shapes from `errors.py`:**
 - `BookNotFound`: 404 `{ message: "Book not found", error_code: "book_not_found" }`
+- `BookInfoNotFound`: 404 `{ message: "Book Info Not Found", error_code: "book_info_not_found" }`
 - `NotAuthenticated` / `InvalidToken`: 401 (no / bad token)
 - `AccountNotVerified`: 403 `{ message: "Account Not verified", error_code: "account_not_verified" }`
 - SlowAPI 429 returns non-standard `{ "detail": ... }` (falls through `parseApiError` to a generic message)
@@ -2138,10 +2158,18 @@ Design decisions:
   - `useUpdateBook(uid)` → invalidate `bookKeys.all` **and** `bookKeys.detail(uid)`.
   - `useDeleteBook` → invalidate `bookKeys.all` with `refetchType: "none"` — marks matched queries stale *without* fetching. The delete fires while still on the detail page, so refetching the just-deleted `["books", uid]` would 404 for nothing; the list refetches on next mount anyway.
 - `mutationFn` here returns the axios promise directly (nothing reads `data` at hook level; pages unwrap where needed). Mutations are called with `mutateAsync`.
+- `useBookInfoViaAgent` **unwraps to flat data** (`const { data }…; return data`) because the component reads the result to prefill the form, and is **not cached / no invalidation** — the payload is transient form state, not server state. `retry` stays default-on (a transient agent miss may succeed on retry), unlike `useBook`'s `retry: false`.
 
 ```ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createBook, deleteBook, getBook, getBooks, updateBook } from "./api";
+import {
+  createBook,
+  deleteBook,
+  getBook,
+  getBookInfoViaAgent,
+  getBooks,
+  updateBook,
+} from "./api";
 import type { BookCreate, BookUpdate } from "../../types/books";
 
 export const bookKeys = {
@@ -2200,6 +2228,17 @@ export const useDeleteBook = () => {
       qc.invalidateQueries({ queryKey: bookKeys.all, refetchType: "none" }),
   });
 };
+
+// Agent prefill (§3.4): flat-unwrapped; result only populates the BookForm once,
+// so it is NOT stored in the cache and nothing is invalidated on success.
+export const useBookInfoViaAgent = () =>
+  useMutation({
+    mutationFn: async (title: string) => {
+      const { data } = await getBookInfoViaAgent(title);
+      return data;
+    },
+  });
+```
 ```
 
 ### 3.3 Build `<BooksListPage />` — DETAILED SPEC
@@ -2289,12 +2328,15 @@ Design decisions:
 - `castUpdate()` builds a partial body, dropping empty strings per field — a later scaling refactor can replace it with `Object.fromEntries` + filter.
 - React 19: use `SyntheticEvent<HTMLFormElement>` for the submit handler (not the deprecated `FormEvent`).
 - Backend note: `published_date` is sent as a raw `"YYYY-MM-DD"` ISO string. Backend input schemas now type it as `date` (`BookCreate.published_date: date` required, `BookUpdate.published_date: Optional[date]`) — Pydantic v2 coerces the ISO string at the validation boundary, so no manual `strptime` conversion exists in the service (create/update set it directly). Invalid formats get a clean 422. `BookUpdate` still makes every field optional.
+- **"Fill via AI" (agent prefill, §3.1/§3.2):** a `type="button"` rendered **inline to the right of the title input** inside a `flex items-center gap-2` row (title input `w-full`; button `shrink-0` + `whitespace-nowrap`). Visibility gate: `{field === "title" && form.title.trim() && (…)}` — shown when the title holds **any** trimmed value (even a single char), hidden when empty/whitespace; it appears/disappears live as the user types (no extra state — `update("title")` re-renders every keystroke).
+- On click: `handleFillViaAI` calls `aiMutation.mutateAsync(form.title.trim())`, then `setForm` keeps `title: f.title` (the user's own text) and **overwrites** `author` (required on `BookInfoOut`) plus `publisher` / `page_count` / `language` / `published_date` with `?? ""` / `?.toString()` fallbacks. Disabled while `mutation.isPending || aiMutation.isPending`; label flips to "Fetching…" during the fetch (agent latency is multi-second).
+- AI errors surface in the same `<ErrorMessage />` block as submit errors — the block branches on whichever mutation errored (`mutation.isError ? mutation.error : aiMutation.error`). The 404 `book_info_not_found` renders verbatim through `parseApiError`.
 
 ```tsx
 import { useNavigate } from "react-router-dom";
 import type { BookCreate, BookUpdate } from "../../types/books";
 import { useState, type ChangeEvent, type SyntheticEvent } from "react";
-import { useCreateBook, useUpdateBook } from "./queries";
+import { useCreateBook, useUpdateBook, useBookInfoViaAgent } from "./queries";
 import ErrorMessage from "../../components/ErrorMessage";
 
 export default function BookForm({
@@ -2321,6 +2363,7 @@ export default function BookForm({
   const createMutation = useCreateBook();
   const updateMutation = useUpdateBook(bookUid ?? "");
   const mutation = mode === "create" ? createMutation : updateMutation;
+  const aiMutation = useBookInfoViaAgent();
 
   function castCreate(): BookCreate {
     return {
@@ -2345,6 +2388,19 @@ export default function BookForm({
   function update(field: keyof typeof form) {
     return (e: ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [field]: e.target.value }));
+  }
+
+  async function handleFillViaAI() {
+    const info = await aiMutation.mutateAsync(form.title.trim());
+    setForm((f) => ({
+      ...f,
+      title: f.title, // keep the user's own title
+      author: info.author, // BookInfoOut.author is required
+      publisher: info.publisher ?? "",
+      page_count: info.page_count?.toString() ?? "",
+      language: info.language ?? "",
+      published_date: info.published_date ?? "",
+    }));
   }
 
   async function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
@@ -2389,9 +2445,11 @@ export default function BookForm({
         {mode === "create" ? "Create Book" : "Edit Book"}
       </h1>
 
-      {mutation.isError && (
+      {(mutation.isError || aiMutation.isError) && (
         <div className="mb-4">
-          <ErrorMessage error={mutation.error} />
+          <ErrorMessage
+            error={mutation.isError ? mutation.error : aiMutation.error}
+          />
         </div>
       )}
       {validationError && (
@@ -2415,12 +2473,25 @@ export default function BookForm({
             <label className="block text-sm font-medium text-gray-700">
               {label}
             </label>
-            <input
-              value={form[field]}
-              onChange={update(field)}
-              required
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-            />
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                value={form[field]}
+                onChange={update(field)}
+                required
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+              {field === "title" && form.title.trim() && (
+                <button
+                  type="button"
+                  onClick={handleFillViaAI}
+                  disabled={mutation.isPending || aiMutation.isPending}
+                  aria-busy={aiMutation.isPending}
+                  className="shrink-0 whitespace-nowrap rounded-md border border-purple-300 px-3 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {aiMutation.isPending ? "Fetching…" : "Fill via AI"}
+                </button>
+              )}
+            </div>
           </div>
         ))}
         <div>
