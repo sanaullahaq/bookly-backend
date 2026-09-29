@@ -2338,6 +2338,7 @@ import type { BookCreate, BookUpdate } from "../../types/books";
 import { useState, type ChangeEvent, type SyntheticEvent } from "react";
 import { useCreateBook, useUpdateBook, useBookInfoViaAgent } from "./queries";
 import ErrorMessage from "../../components/ErrorMessage";
+import { Sparkles } from "lucide-react";
 
 export default function BookForm({
   mode,
@@ -2486,8 +2487,9 @@ export default function BookForm({
                   onClick={handleFillViaAI}
                   disabled={mutation.isPending || aiMutation.isPending}
                   aria-busy={aiMutation.isPending}
-                  className="shrink-0 whitespace-nowrap rounded-md border border-purple-300 px-3 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="shrink-0 whitespace-nowrap flex items-center gap-1 rounded-md border border-purple-300 px-3 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
+                  <Sparkles size={14} />
                   {aiMutation.isPending ? "Fetching…" : "Fill via AI"}
                 </button>
               )}
