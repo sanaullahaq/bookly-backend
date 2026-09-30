@@ -3,7 +3,6 @@ from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-
 from src.auth.dependencies import RoleChecker
 from src.books.schemas import BookOut
 from src.db.main import get_session
@@ -54,6 +53,20 @@ async def add_tags_to_book(
 
     return book_with_tag
 
+@tags_router.delete(
+    "/book/{book_uid}/tags/{tag_uid}", response_model=BookOut, dependencies=[user_role_checker]
+)
+async def remove_tag_from_book(
+    book_uid: str,
+    tag_uid: str,
+    session: AsyncSession = Depends(get_session),
+) -> Book:
+
+    book = await tag_service.remove_tag_from_book(
+        book_uid=book_uid, tag_uid=tag_uid, session=session
+    )
+
+    return book
 
 @tags_router.put("/{tag_uid}", response_model=TagOut, dependencies=[user_role_checker])
 async def update_tag(

@@ -1,10 +1,10 @@
-from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import desc, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from src.books.service import BookService
 from src.db.models import Tag
 from src.errors import BookNotFound, TagAlreadyExists, TagNotFound
 from src.tags.schemas import TagAdd, TagCreate
-
 
 book_service = BookService()
 
@@ -121,6 +121,24 @@ class TagService:
         #    Since book.tags is already loaded, no lazy load occurs
         #    during serialization.
         # ------------------------------------------------------------
+        return book
+
+    async def remove_tag_from_book(
+        self, book_uid: str, tag_uid: str, session: AsyncSession
+    ):
+        book = await book_service.get_book(book_uid=book_uid, session=session)
+
+        if not book:
+            raise BookNotFound()
+
+        tag = await self.get_tag_by_uid(tag_uid=tag_uid, session=session)
+
+        if tag and tag in book.tags:
+            book.tags.remove(tag)
+
+            await session.commit()
+
+            await session.refresh(book)
         return book
 
     async def get_tag_by_name(self, tag_name: str, session: AsyncSession):
