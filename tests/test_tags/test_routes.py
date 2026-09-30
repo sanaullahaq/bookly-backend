@@ -2,7 +2,7 @@ import uuid
 import pytest
 from src.books.schemas import BookCreate
 from src.books.service import BookService
-from src.tags.schemas import TagCreate
+from src.tags.schemas import TagAdd, TagCreate
 from src.tags.service import TagService
 
 
@@ -100,6 +100,51 @@ class TestTagRoutes:
     async def test_delete_tag_not_found(self, client, auth_headers):
         resp = await client.delete(
             f"/api/v1/tags/{uuid.uuid4()}",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_remove_tag_from_book(self, client, session, auth_headers, test_user):
+        book_service = BookService()
+        book = await book_service.create_book(
+            book_data=BookCreate(
+                title="Remove Route Book",
+                author="Author",
+                publisher="Pub",
+                page_count=100,
+                language="English",
+                published_date="2024-01-01",
+            ),
+            user_uid=test_user.uid,
+            session=session,
+        )
+        service = TagService()
+        await service.add_tags_to_book(
+            book_uid=str(book.uid),
+            tag_data=TagAdd(tags=[TagCreate(name="fiction"), TagCreate(name="classic")]),
+            session=session,
+        )
+        tags = await service.get_tags(session=session)
+        fiction = next(t for t in tags if t.name == "fiction")
+
+        resp = await client.delete(
+            f"/api/v1/tags/book/{book.uid}/tags/{fiction.uid}",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert [tag["name"] for tag in data["tags"]] == ["classic"]
+
+        still_exists = await service.get_tag_by_uid(
+            tag_uid=str(fiction.uid), session=session
+        )
+        assert still_exists is not None
+
+    @pytest.mark.asyncio
+    async def test_remove_tag_from_book_not_found(self, client, auth_headers):
+        resp = await client.delete(
+            f"/api/v1/tags/book/{uuid.uuid4()}/tags/{uuid.uuid4()}",
             headers=auth_headers,
         )
         assert resp.status_code == 404

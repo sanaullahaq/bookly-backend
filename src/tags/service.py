@@ -1,3 +1,5 @@
+import uuid
+
 from sqlmodel import desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -33,48 +35,56 @@ class TagService:
         # ------------------------------------------------------------
         # 2. Process each tag from the request payload.
         #    tag_data.tags is a List[TagCreate] — each item has a .name.
-        #    We use a "find-or-create" pattern so the same tag name
-        #    can be shared across multiple books (many-to-many).
+        #    We use a "find-or-create" pattern so the same tag name can
+        #    be shared across multiple books (many-to-many).
+        #
+        #    Duplicates are guarded two ways because BookTag has a
+        #    composite primary key (book_uid + tag_uid):
+        #      - A tag already linked to this book is NOT appended again
+        #        (re-appending would INSERT a duplicate BookTag row,
+        #        which violates the PK and 500s on commit).
+        #      - A name repeated within this request is processed once.
+        #        get_tag_by_name() queries the DB, which can't see the
+        #        still-unflushed inserts, so the second occurrence would
+        #        otherwise create a duplicate Tag row. Adding each
+        #        processed name to book_tag_names makes those repeats
+        #        hit the same skip as already-attached tags.
         # ------------------------------------------------------------
+        book_tag_names = {tag.name for tag in book.tags}
+
         for tag_item in tag_data.tags:
             # ------------------------------------------------------------
-            # 2a. Look up an existing Tag by name.
-            #     one_or_none() returns the Tag or None if not found.
+            # 2a. Skip names already attached to this book or already
+            #     handled earlier in this request.
             # ------------------------------------------------------------
-            # result = await session.exec(select(Tag).where(Tag.name == tag_item.name))
-            # tag = result.one_or_none()
-            tag = await self.get_tag_by_name(tag_name=tag_item.name, session=session)
+            if tag_item.name in book_tag_names:
+                continue
 
             # ------------------------------------------------------------
-            # 2b. Create a new Tag if it doesn't already exist.
-            #     This object is NOT yet tracked by the session — it will
-            #     become tracked when it's appended to a tracked parent's
-            #     relationship (cascade behavior), or when session.add()
-            #     is called explicitly (line 53).
+            # 2b. Look up an existing Tag by name; create it if missing.
+            #     A new Tag is NOT yet tracked by the session — appending
+            #     it to a tracked parent's relationship (cascade
+            #     save-update) is what INSERTs it on the next flush.
             # ------------------------------------------------------------
+            tag = await self.get_tag_by_name(tag_name=tag_item.name, session=session)
+
             if not tag:
                 tag = Tag(name=tag_item.name)
 
             # ------------------------------------------------------------
             # 2c. Append the Tag to the book's relationship list.
-            #     Book.tags is a many-to-many relationship with
-            #     link_model=BookTag (the association table).
-            #     SQLAlchemy tracks this append operation and will
-            #     INSERT a row into the BookTag table on next flush.
-            #
-            #     Even if this tag was already linked to this book,
-            #     appending it again would create a duplicate BookTag
-            #     row. In practice this method is called once per set
-            #     of tags, so duplicates don't occur here.
+            #     SQLAlchemy tracks this append and queues a BookTag link
+            #     row to INSERT on the next flush.
             # ------------------------------------------------------------
             book.tags.append(tag)
+            book_tag_names.add(tag_item.name)
 
         # ------------------------------------------------------------
         # 3. Explicitly add the book to the session's identity map.
         #    book is already tracked (fetched via session on line 28),
         #    so this call is technically a no-op for book itself.
         #
-        #    However, if any tag was newly created (line 42-43) and
+        #    However, if any tag was newly created (section 2b) and
         #    was NOT automatically cascaded, this ensures it's tracked.
         #    In SQLModel, cascade="save-update" is the default on
         #    many-to-many relationships, so even this is redundant.
@@ -147,7 +157,12 @@ class TagService:
         return tag
 
     async def get_tag_by_uid(self, tag_uid: str, session: AsyncSession):
-        statement = select(Tag).where(Tag.uid == tag_uid)
+        try:
+            tag_uid_obj = uuid.UUID(str(tag_uid))
+        except ValueError:
+            return None
+
+        statement = select(Tag).where(Tag.uid == tag_uid_obj)
         result = await session.exec(statement)
         return result.first()
 
