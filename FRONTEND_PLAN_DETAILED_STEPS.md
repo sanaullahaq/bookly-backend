@@ -93,15 +93,17 @@
   - [5.4 Optimistic updates (optional enhancement)](#54-optimistic-updates-optional-enhancement)
   - [5.5 Vitest + React Testing Library setup](#55-vitest--react-testing-library-setup)
   - [5.6 Write MSW handlers (`src/test/mocks/handlers.ts`)](#56-write-msw-handlers-srctestmockshandlersts)
-  - [5.7 Write sample test: auth store](#57-write-sample-test-auth-store)
-  - [5.8 Write sample test: LoginPage component](#58-write-sample-test-loginpage-component)
-  - [5.9 Write sample test: BooksListPage with MSW](#59-write-sample-test-bookslistpage-with-msw)
-  - [5.10 Run all tests](#510-run-all-tests)
-  - [5.11 Type-check the entire project](#511-type-check-the-entire-project)
-  - [5.12 Update `frontend/README.md`](#512-update-frontendreadmemd)
-  - [5.13 Lint check (if ESLint is configured)](#513-lint-check-if-eslint-is-configured)
+  - [5.7 Test utilities: a fresh `QueryClient` per test](#57-test-utilities-a-fresh-queryclient-per-test)
+  - [5.8 Write sample test: auth store](#58-write-sample-test-auth-store)
+  - [5.9 Write sample test: LoginPage component](#59-write-sample-test-loginpage-component)
+  - [5.10 Write sample test: BooksListPage with MSW](#510-write-sample-test-bookslistpage-with-msw)
+  - [5.11 Write sample test: TagEditor (hover/focus remove + add)](#511-write-sample-test-tageditor-hoverfocus-remove--add)
+  - [5.12 Run all tests](#512-run-all-tests)
+  - [5.13 Type-check the entire project](#513-type-check-the-entire-project)
+  - [5.14 Update `frontend/README.md` — DONE](#514-update-frontendreadmemd--done)
+  - [5.15 Lint + final gate](#515-lint--final-gate)
 - [Cross-cutting concerns](#cross-cutting-concerns)
-  - [Backend email link repointing](#backend-email-link-repointing)
+  - [Backend email link repointing — RESOLVED (Phase 2)](#backend-email-link-repointing--resolved-phase-2)
   - [CORS](#cors)
   - [Environment variable reference](#environment-variable-reference)
 
@@ -208,12 +210,15 @@ src/
     ErrorMessage.tsx        # Renders ApiError.message
     ConfirmDialog.tsx       # Reusable inline confirm modal (Phase 3 §3.5)
   router.tsx                # createBrowserRouter config
-  test/
-    setup.ts                # Vitest setup — import MSW server
-    server.ts               # MSW handlers
+  test/                      # Phase 5 §5.5-§5.6
+    setup.ts                # Vitest setup — jest-dom matchers + MSW lifecycle
+    server.ts               # setupServer(...handlers)
+    utils.tsx               # renderWithProviders + fresh QueryClient per test (§5.7)
     mocks/
-      handlers.ts           # Per-feature mock handlers
+      handlers.ts           # Per-feature mock handlers (BASE from VITE_API_BASE_URL)
 ```
+
+Phase 5 also adds `tsconfig.test.json` (registered in `tsconfig.json` references) so test globals and jest-dom matchers typecheck without leaking into `tsconfig.app.json`.
 
 ### 1.6 Shared TypeScript types (`src/types/*.ts` — implemented, per-domain files)
 
@@ -3483,127 +3488,283 @@ Design decisions:
 ---
 
 ## Phase 5 — Polish + Tests
-Polish + Tests: loading/empty states, error boundary, MSW setup + handlers, sample Vitest+RTL tests for auth store and components, type-check and lint commands, README
+Polish + Tests: loading/empty states, form validation polish, error boundary, optional optimistic updates, Vitest + MSW setup with real handlers, sample tests, type-check and lint gates, README
+
+**Status: not started.** Phases 1-4 are BUILT (verified from disk). Phase 5 touches **zero backend code** — it is entirely `bookly-frontend` plus this doc. Backend stays at 124 tests / `pytest tests/ -v`.
+
+Work order matters: §5.5-§5.6 (tooling + handlers) gate every test in §5.7-§5.11, so do the tooling first and get one test green before writing the rest.
 
 
 ### 5.1 Loading and empty states
 
-Audit every page and component:
+Audited against disk. **Most of this is already shipped** — the table records the current state so Phase 5 only fills the real gaps. Two rows in the original spec referenced components that do not exist and are dropped (`TagsListPage`, and a loading state for the presentational `TagChips`).
 
-| Component | Loading state | Empty state |
-|---|---|---|
-| `BooksListPage` | `<Loading fullPage />` skeleton grid | "No books yet. Create your first book!" with CTA |
-| `BookDetailPage` | `<Loading fullPage />` skeleton | `<ErrorMessage />` (404) |
-| `ReviewList` | Inline spinner | "No reviews yet. Be the first!" |
-| `TagChips` | Inline dots | "No tags" (plain text) |
-| `TagsListPage` | `<Loading />` | "No tags created yet" |
+| Component | Loading state (actual) | Empty state (actual) | Status |
+|---|---|---|---|
+| `BooksListPage` | `<Loading />` (not `fullPage`) | "No books yet. Create your first book!" — **but it has no CTA link** | GAP: add a `<Link to="/books/new">` CTA |
+| `BookDetailPage` | `<Loading />` | `<ErrorMessage />` for 404/500 | done |
+| `BookForm` (create/edit) | none needed (mutation-driven) | n/a | done |
+| `ReviewList` | **none** — reviews arrive as props from `useBook` | "No reviews yet. Be the first!" | OK: no fetch means no spinner |
+| `ReviewForm` | n/a | n/a | done (`aria-busy` + label flip) |
+| `TagEditor` | **none** — tags arrive as props | "No tags yet — add one below." + Add disabled when input is empty | done |
+| `TagChips` | **n/a** — presentational, no fetch | returns `null` | by design; no spinner |
+| auth pages (`LoginPage`, `SignupPage`, `PasswordReset*`, `VerifyEmailPage`) | none needed (mutation-driven) | n/a | done (`aria-busy` + label flip) |
+
+Notes:
+- `<Loading />` already accepts `fullPage` and `size` props (`src/components/Loading.tsx`). Pages deliberately use the inline variant; only adopt `fullPage` if a route-level loading UI is wanted.
+- The removed `TagsListPage` row is correct — there is no `/tags` route and never will be one; tag administration is inline on `/books/:uid` (§4.8/§4.9).
+- The original spec's `<Loading fullPage />` for the books pages does not match disk (`BooksListPage` line 9 / `BookDetailPage` line 30 both `return <Loading />`). Leave as-is unless the full-page treatment is explicitly wanted.
 
 ### 5.2 Form validation polish
 
-- Add inline validation messages below each field (red text)
-- Disable submit button while mutation is pending (`isPending` from `useMutation`)
-- Show success toast or inline message after create/update/delete
+Already done, do not redo:
+- `BookForm` — one form-level `validationError` ("All fields are required.", positive `page_count` range check) rendered through `<ErrorMessage />` with the `{ message, error_code: "validation" }` alias shape; submit disabled + `aria-busy` while `mutation.isPending` or `aiMutation.isPending`; AI button label flips to "Fetching…".
+- `ReviewForm` — `rating === 0` → "Please select a rating.", blank text → "Please write a review.", both `return` **before** firing the request (so an invalid submit makes zero network calls); submit disabled while pending.
+- `TagEditor` — empty name → "Enter a tag name"; duplicate name short-circuits; Add disabled while pending (label "Adding...").
+- `LoginPage` / `SignupPage` — native `required` + `type="email"`/`type="password"` browser gates, `autoComplete` hints, disabled while pending.
+
+Real remaining gaps:
+1. **Per-field inline errors in `BookForm`.** Today one message covers all six fields. Split into a `fieldErrors` record keyed by field name, render red text under each input, and keep the form-level banner for the cross-cutting case (or drop it entirely once per-field errors exist). All six inputs need `aria-invalid` + `aria-describedby` pointing at the message id for this to be accessible.
+2. **Success feedback after create/update/delete.** Nothing confirms a successful save today — the user navigates away and infers success. Options: (a) inline confirmation text, (b) a small toast component, (c) rely on navigation only. No toast library is installed; pick (a) or add one deliberately (e.g. `sonner`) rather than hand-rolling.
+3. **`aria-live` on mutation error banners.** `<ErrorMessage />` renders the message but nothing announces it. Consider `role="alert"` on the container so screen readers pick up a failed submit.
 
 ### 5.3 Error boundary
+
+`router.tsx` currently has **no** `errorElement` anywhere, so a render-time throw inside a route produces a blank screen. Add it. Two fixes versus the original spec: `import React from "react"` is unnecessary under `jsx: "react-jsx"`, and `JSON.stringify(error, null, 2)` on a thrown `Error` serialises to `{}` (non-enumerable `message`/`stack`), which tells the user nothing.
 
 Create `src/components/ErrorBoundary.tsx`:
 
 ```tsx
-import React from "react";
-import { useRouteError } from "react-router-dom";
+import { isRouteErrorResponse, useRouteError } from "react-router-dom";
+import ErrorMessage from "./ErrorMessage";
 
 export default function ErrorBoundary() {
   const error = useRouteError();
+
+  // Thrown/returned Response (e.g. a loader error) — has a real status.
+  if (isRouteErrorResponse(error)) {
+    return (
+      <div className="mx-auto max-w-md p-8 text-center">
+        <h2 className="text-xl font-semibold text-gray-900">
+          {error.status} {error.statusText}
+        </h2>
+        <p className="mt-2 text-sm text-gray-600">
+          {typeof error.data === "string"
+            ? error.data
+            : "Something went wrong loading this page."}
+        </p>
+      </div>
+    );
+  }
+
+  // Render-time throw — an Error instance.
+  const message = error instanceof Error ? error.message : String(error);
   return (
-    <div>
-      <h2>Something went wrong</h2>
-      <pre>{JSON.stringify(error, null, 2)}</pre>
+    <div className="mx-auto max-w-md p-8 text-center">
+      <h2 className="text-xl font-semibold text-gray-900">Something went wrong</h2>
+      <ErrorMessage
+        error={{ message, resolution: "Try reloading the page.", error_code: "ui_error" }}
+      />
     </div>
   );
 }
 ```
 
-Add `errorElement: <ErrorBoundary />` to the root route in `router.tsx`.
+Then wire it in `src/router.tsx` on the **root** route object (the one with `path: "/"` and `element: <App />`) — the current router has a single root with nested children, so an `errorElement` there catches every descendant:
+
+```tsx
+{
+  path: "/",
+  element: <App />,
+  errorElement: <ErrorBoundary />,   // new
+  children: [ /* ...unchanged... */ ],
+}
+```
+
+Also add `import ErrorBoundary from "./components/ErrorBoundary";` to `router.tsx`. In dev, log the raw error (`console.error(error)`) so the stack is still reachable — the UI copy deliberately hides internals.
 
 ### 5.4 Optimistic updates (optional enhancement)
 
-For `useDeleteBook` and `useDeleteReview`, consider `onMutate` to immediately remove the item from the cached list before the server confirms. Example pattern:
+Correct the original snippet before using it: `bookKeys.all` holds `BookOut[]` (not the backend `Book` model — `tags` is a required field on it), and there is no `onSettled` refetch, so a rolled-back update can leave a stale list forever.
 
 ```ts
-onMutate: async (uid) => {
-  await qc.cancelQueries({ queryKey: bookKeys.all });
-  const previous = qc.getQueryData(bookKeys.all);
-  qc.setQueryData(bookKeys.all, (old) =>
-    (old as Book[]).filter((b) => b.uid !== uid)
-  );
-  return { previous };
-},
-onError: (_err, _uid, context) => {
-  qc.setQueryData(bookKeys.all, context?.previous);
-},
+export const useDeleteBook = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (uid: string) => deleteBook(uid),
+    onMutate: async (uid) => {
+      await qc.cancelQueries({ queryKey: bookKeys.all });
+      const previous = qc.getQueryData(bookKeys.all);
+      qc.setQueryData(bookKeys.all, (old) =>
+        (old as BookOut[]).filter((b) => b.uid !== uid)
+      );
+      return { previous };
+    },
+    onError: (_err, _uid, context) => {
+      qc.setQueryData(bookKeys.all, context?.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: bookKeys.all }),
+  });
+};
 ```
+
+- Keep the existing `refetchType: "none"` intent: we navigate to `/books` right after `mutateAsync` resolves, so a refetch of the deleted book's `["books", uid]` query would 404 for no value. That nuance is already documented in `queries.ts` — don't drop it.
+- Same pattern applies to `useDeleteReview` (invalidating `bookKeys.detail(bookUid)`).
+- **Do tags/reviews need this? No.** Add/remove tag already refetches one small query and the UI is a list of pills — optimistic churn buys nothing and risks flashing a chip the backend rejected. Leave `useAddTagsToBook`/`useRemoveTagFromBook` as invalidation-only.
 
 ### 5.5 Vitest + React Testing Library setup
 
 **Install testing dependencies:**
 
 ```bash
-npm install -D vitest @testing-library/react @testing-library/jest-dom @testing-library/user-event msw jsdom
+npm install -D vitest @vitest/coverage-v8 @testing-library/react @testing-library/jest-dom @testing-library/user-event msw jsdom @testing-library/dom
 ```
 
-**Configure Vitest in `vite.config.ts`:**
+`@testing-library/dom` is listed explicitly because it is a peer dependency of `@testing-library/react` and is not hoisted reliably under React 19.
+
+**Add npm scripts** (there is no `test` script today):
+
+```bash
+npm pkg set scripts.test="vitest run"
+npm pkg set scripts.test:watch="vitest"
+npm pkg set scripts.test:coverage="vitest run --coverage"
+```
+
+**Configure Vitest in `vite.config.ts`** — keep the `tailwindcss()` plugin that is already there, do not replace it:
 
 ```ts
-/// <reference types="vitest" />
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   test: {
     globals: true,
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
-    css: true,
+    coverage: { provider: "v8", reporter: ["text", "html"] },
   },
 });
 ```
 
+`/// <reference types="vitest/config" />` is what teaches `defineConfig` about the `test` key; without it TypeScript flags the property as unknown. The original spec's `css: true` is dropped — Vitest processes CSS by default now, and Tailwind classes are preserved as plain strings either way.
+
+Two gotchas that will otherwise produce confusing failures:
+
+1. **`tsc -b` typechecks your tests.** `tsconfig.app.json` has `"include": ["src"]`, so any `*.test.ts(x)` under `src` is compiled by `npm run build` and fails the gate on type errors. That is desirable — but it means the test types must be declared.
+2. **Declare the test types.** `tsconfig.app.json` currently pins `"types": ["vite/client"]`, which *replaces* the implicit `@types` set, so `describe`/`it`/`expect` and the jest-dom matchers will not typecheck. Add a dedicated project instead of touching the app config, keeping app and test settings separable:
+
+```jsonc
+// tsconfig.test.json (new)
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "noEmit": true
+  },
+  "include": ["src", "src/test"]
+}
+```
+
+and register it in `tsconfig.json`:
+
+```jsonc
+{ "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }, { "path": "./tsconfig.test.json" }] }
+```
+
+If you would rather keep one project, the equivalent minimal change is adding `"vitest/globals"` and `"@testing-library/jest-dom"` to the existing `types` array in `tsconfig.app.json` — but that leaks test globals into app code, which is why the split project is preferred.
+
 **Create MSW setup (`src/test/setup.ts`):**
 
 ```ts
-import "@testing-library/jest-dom";
-import { beforeAll, afterEach, afterAll } from "vitest";
+import "@testing-library/jest-dom/vitest";
+import { cleanup } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll } from "vitest";
 import { server } from "./server";
 
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+afterEach(() => {
+  server.resetHandlers();
+  cleanup();
+});
 afterAll(() => server.close());
+```
+
+- `onUnhandledRequest: "error"` (not `"bypass"`) is deliberate: a test that forgets a handler fails loudly instead of hitting the real backend on `:8000`. If a specific test needs a passthrough, override per-test with `server.use(http.all("*/api/v1/*", () => passthrough()))`.
+- Import `@testing-library/jest-dom/vitest` (not the bare package) — it registers the matchers against Vitest's `expect` and provides the type augmentation.
+- Explicit `cleanup()` is needed because `globals: true` does not enable RTL's automatic cleanup the way it does under Jest.
+- The setup file's path must match `vite.config.ts`'s `setupFiles` exactly.
+
+**Create the MSW server (`src/test/server.ts`)** — referenced by `setup.ts` but missing from the original spec (only `server.ts` appears in the §1.5 tree, with no section creating it):
+
+```ts
+import { setupServer } from "msw/node";
+import { handlers } from "./mocks/handlers";
+
+export const server = setupServer(...handlers);
 ```
 
 ### 5.6 Write MSW handlers (`src/test/mocks/handlers.ts`)
 
+The base URL **must** match `import.meta.env.VITE_API_BASE_URL` exactly. MSW matches the full URL string, and `.env` sets `http://127.0.0.1:8000/api/v1` — note `127.0.0.1`, not `localhost`. A hardcoded `localhost` base makes every handler silently miss and the tests either hang or hit the real server. Read it from the env so the two can never drift:
+
 ```ts
 import { http, HttpResponse } from "msw";
-import type { LoginResponse } from "../../types/users";
-import type { BookOut } from "../../types/books";
+import type { LoginResponse, UserDetailOut } from "../../types/users";
+import type { BookDetailOut, BookOut } from "../../types/books";
+import type { ReviewOut } from "../../types/reviews";
+import type { TagOut } from "../../types/tags";
 
-const BASE = "http://localhost:8000/api/v1";
+const BASE = import.meta.env.VITE_API_BASE_URL as string;
+
+export const bookDetail = (uid: string): BookDetailOut => ({
+  uid,
+  title: "The Great Gatsby",
+  author: "F. Scott Fitzgerald",
+  publisher: "Scribner",
+  page_count: 180,
+  language: "English",
+  published_date: "1925-04-10",
+  tags: [{ uid: "tag-1", name: "classic", created_at: "2024-01-01T00:00:00" }],
+  created_at: "2024-01-01T00:00:00",
+  updated_at: "2024-01-01T00:00:00",
+  reviews: [],
+});
+
+export const tagList: TagOut[] = [
+  { uid: "tag-1", name: "classic", created_at: "2024-01-01T00:00:00" },
+  { uid: "tag-2", name: "sci-fi", created_at: "2024-01-01T00:00:00" },
+];
+
+export const review: ReviewOut = {
+  uid: "review-1",
+  user_uid: "user-1",
+  book_uid: "book-1",
+  rating: 4,
+  review_text: "Great read.",
+  created_at: "2024-01-01T00:00:00",
+  updated_at: "2024-01-01T00:00:00",
+};
 
 export const handlers = [
+  // --- auth ---
   http.post(`${BASE}/auth/login`, async () => {
     const body: LoginResponse = {
       message: "Login successful",
       access_token: "mock-access-token",
       refresh_token: "mock-refresh-token",
-      user: { user: "test@example.com", uid: "test-uid" },
+      user: { user: "test@example.com", uid: "user-1" },
     };
     return HttpResponse.json(body);
   }),
-
-  http.get(`${BASE}/auth/me`, () => {
-    return HttpResponse.json({
-      uid: "test-uid",
+  // LoginPage's mutationFn calls getCurrentUser() immediately after login,
+  // so a login test needs this handler or the flow stalls on it.
+  http.get(`${BASE}/auth/me`, () =>
+    HttpResponse.json<UserDetailOut>({
+      ...bookDetail("book-1"),
+      uid: "user-1",
       username: "testuser",
       email: "test@example.com",
       first_name: "Test",
@@ -3613,41 +3774,86 @@ export const handlers = [
       updated_at: "2024-01-01T00:00:00",
       books: [],
       reviews: [],
-    });
-  }),
+    })
+  ),
 
+  // --- books ---
   http.get(`${BASE}/books/`, () => {
-    const books: BookOut[] = [
-      {
-        uid: "book-1",
-        title: "The Great Gatsby",
-        author: "F. Scott Fitzgerald",
-        publisher: "Scribner",
-        page_count: 180,
-        language: "English",
-        published_date: "1925-04-10",
-        tags: [],
-        created_at: "2024-01-01T00:00:00",
-        updated_at: "2024-01-01T00:00:00",
-      },
-    ];
+    const books: BookOut[] = [bookDetail("book-1")];
     return HttpResponse.json(books);
   }),
+  http.get(`${BASE}/books/:uid`, ({ params }) =>
+    HttpResponse.json(bookDetail(String(params.uid)))
+  ),
 
-  // Add more handlers per feature as needed
+  // --- reviews ---
+  http.post(`${BASE}/reviews/`, () => HttpResponse.json(review, { status: 201 })),
+  http.delete(`${BASE}/reviews/:uid`, () => new HttpResponse(null, { status: 204 })),
+
+  // --- tags ---
+  http.get(`${BASE}/tags/`, () => HttpResponse.json(tagList)),
+  http.post(`${BASE}/tags/book/:book_uid/tags`, ({ params }) =>
+    HttpResponse.json(bookDetail(String(params.book_uid)))
+  ),
+  http.delete(`${BASE}/tags/book/:book_uid/tags/:tag_uid`, ({ params }) =>
+    HttpResponse.json(bookDetail(String(params.book_uid)))
+  ),
 ];
 ```
 
-### 5.7 Write sample test: auth store
+Notes:
+- **Match the real route paths.** Tags use a *suffixed* book segment — `/tags/book/{book_uid}/tags` — not `/tags/{book_uid}`. Copy paths from `src/tags/routes.py` (`api.ts` is the source of truth).
+- `/auth/me` returns `UserDetailOut`, so the payload needs `books` and `reviews`; the original spec's literal left the shape untyped and would not satisfy `getCurrentUser()`.
+- Review delete returns `204` with a `null` body — `HttpResponse.json(undefined)` would send `"null"` with a 200 and break `response_model`-shaped expectations.
+- Keep handler payloads as named exports so tests can mutate them per-case; for a specific error response use `server.use(...)` inside the test rather than editing this file.
+
+### 5.7 Test utilities: a fresh `QueryClient` per test
+
+Not in the original spec, and required by every component test below. The app's `src/lib/queryClient.ts` singleton has `staleTime: 60_000` and `retry: 1`, so reusing it across tests leaks cached data between cases (the second test sees the first test's cached list and never refetches) and makes failures slow. Put the wrapper in `src/test/utils.tsx` and use it everywhere:
+
+```tsx
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, type RenderOptions } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
+
+export function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0, staleTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+}
+
+export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
+  const qc = createTestQueryClient();
+  return {
+    qc,
+    ...render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+      </MemoryRouter>,
+      options
+    ),
+  };
+}
+```
+
+Two React 19 / TS details the original snippets got wrong: the parameter type is `ReactElement` imported with `import type` (bare `React.ReactElement` is not in scope under `verbatimModuleSyntax` without importing the namespace), and `createRoot` warnings about multiple roots disappear once each test gets its own client.
+
+### 5.8 Write sample test: auth store
 
 **File:** `src/features/auth/__tests__/authStore.test.ts`
 
 ```ts
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { useAuthStore } from "../authStore";
 
 describe("authStore", () => {
   beforeEach(() => {
+    // logout() also clears cached ["currentUser"] queries via queryClient,
+    // and partialize persists only { accessToken, refreshToken, user }.
     useAuthStore.getState().logout();
     localStorage.clear();
   });
@@ -3664,10 +3870,20 @@ describe("authStore", () => {
     expect(useAuthStore.getState().refreshToken).toBe("refresh-456");
   });
 
-  it("persists to localStorage", () => {
+  it("persists tokens and user to localStorage", () => {
     useAuthStore.getState().setTokens("access-123", "refresh-456");
     const stored = JSON.parse(localStorage.getItem("bookly-auth")!);
+    // partialize means actions are NOT serialised — only the three data fields.
     expect(stored.state.accessToken).toBe("access-123");
+    expect(stored.state.setTokens).toBeUndefined();
+  });
+
+  it("rehydrates from localStorage", () => {
+    localStorage.setItem(
+      "bookly-auth",
+      JSON.stringify({ state: { accessToken: "a", refreshToken: "b", user: null }, version: 0 })
+    );
+    expect(useAuthStore.persist.rehydrate()).toBeDefined();
   });
 
   it("clears state on logout", () => {
@@ -3675,126 +3891,290 @@ describe("authStore", () => {
     useAuthStore.getState().logout();
     expect(useAuthStore.getState().isAuthenticated()).toBe(false);
     expect(useAuthStore.getState().accessToken).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
+  });
+
+  it("updates only the access token on refresh", () => {
+    useAuthStore.getState().setTokens("old-access", "refresh-456");
+    useAuthStore.getState().setAccessToken("new-access");
+    expect(useAuthStore.getState().accessToken).toBe("new-access");
+    expect(useAuthStore.getState().refreshToken).toBe("refresh-456");
   });
 });
 ```
 
-### 5.8 Write sample test: LoginPage component
+The `rehydrates` case is the one worth keeping: it is the only test that catches a `persist` `partialize`/`name` regression, and that regression is invisible until a real user gets logged out between reloads.
+
+### 5.9 Write sample test: LoginPage component
 
 **File:** `src/features/auth/__tests__/LoginPage.test.tsx`
 
 ```tsx
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "../../../lib/queryClient";
+import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../test/server";
+import { renderWithProviders } from "../../../test/utils";
 import LoginPage from "../LoginPage";
-
-const renderWithProviders = (ui: React.ReactElement) =>
-  render(
-    <MemoryRouter>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
-    </MemoryRouter>
-  );
 
 describe("LoginPage", () => {
   it("renders email and password fields", () => {
     renderWithProviders(<LoginPage />);
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    // Scoped to the textbox: the show/hide toggle button also carries a
+    // /password/i accessible name ("Show password"), so an unscoped
+    // getByLabelText(/password/i) throws "found multiple elements".
+    expect(screen.getByLabelText(/password/i, { selector: "input" })).toBeInTheDocument();
   });
 
-  it("renders login button", () => {
+  it("renders the login button and the signup link", () => {
     renderWithProviders(<LoginPage />);
-    expect(screen.getByRole("button", { name: /log in/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign up/i })).toHaveAttribute("href", "/signup");
   });
 
-  it("renders link to signup", () => {
+  it("shows the backend error message on a rejected login", async () => {
+    server.use(
+      http.post(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, () =>
+        HttpResponse.json(
+          {
+            message: "Invalid credentials",
+            resolution: "Check your email and password",
+            error_code: "invalid_credentials",
+          },
+          { status: 400 }
+        )
+      )
+    );
+    const user = userEvent.setup();
     renderWithProviders(<LoginPage />);
-    expect(screen.getByText(/sign up/i)).toHaveAttribute("href", "/signup");
+
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.type(screen.getByLabelText(/password/i, { selector: "input" }), "wrongpass");
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByText(/invalid credentials/i)).toBeInTheDocument();
+  });
+
+  it("stores tokens after a successful login", async () => {
+    const { useAuthStore } = await import("../authStore");
+    const user = userEvent.setup();
+    renderWithProviders(<LoginPage />);
+
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.type(screen.getByLabelText(/password/i, { selector: "input" }), "correctpass");
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByRole("link", { name: /sign up/i })).toBeInTheDocument();
+    expect(useAuthStore.getState().accessToken).toBe("mock-access-token");
+    expect(useAuthStore.getState().user?.email).toBe("test@example.com");
   });
 });
 ```
 
-### 5.9 Write sample test: BooksListPage with MSW
+Notes:
+- `useAuth()` reads `useAuthStore` directly, so no provider wrapper is needed for auth state — only the router and query client.
+- The success case needs **both** the `/auth/login` and `/auth/me` handlers: `LoginPage`'s `mutationFn` fetches the full profile right after storing the tokens. Forgetting `/auth/me` is the classic cause of "the login test just spins".
+- The failed-login assertion covers the `{ message, resolution?, error_code }` contract end to end (§1.9): server payload → axios error → `parseApiError()` → `<ErrorMessage />`.
+
+### 5.10 Write sample test: BooksListPage with MSW
 
 **File:** `src/features/books/__tests__/BooksListPage.test.tsx`
 
 ```tsx
-import { describe, it, expect } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "../../../lib/queryClient";
+import { screen, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import { server } from "../../../test/server";
+import { renderWithProviders } from "../../../test/utils";
 import BooksListPage from "../BooksListPage";
 
-const renderWithProviders = (ui: React.ReactElement) =>
-  render(
-    <MemoryRouter>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
-    </MemoryRouter>
-  );
-
 describe("BooksListPage", () => {
-  it("renders books from API", async () => {
+  it("renders books from the API", async () => {
     renderWithProviders(<BooksListPage />);
-    await waitFor(() => {
-      expect(screen.getByText("The Great Gatsby")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("The Great Gatsby")).toBeInTheDocument();
+    expect(screen.getByText(/F\. Scott Fitzgerald/)).toBeInTheDocument();
+  });
+
+  it("renders tag chips on a book card", async () => {
+    renderWithProviders(<BooksListPage />);
+    expect(await screen.findByText("classic")).toBeInTheDocument();
+  });
+
+  it("shows the empty state when there are no books", async () => {
+    server.use(
+      http.get(`${import.meta.env.VITE_API_BASE_URL}/books/`, () =>
+        HttpResponse.json([])
+      )
+    );
+    renderWithProviders(<BooksListPage />);
+    expect(
+      await screen.findByText(/no books yet\. create your first book!/i)
+    ).toBeInTheDocument();
+  });
+
+  it("shows the error state when the request fails", async () => {
+    server.use(
+      http.get(`${import.meta.env.VITE_API_BASE_URL}/books/`, () =>
+        HttpResponse.json({ message: "Server exploded", error_code: "internal_error" }, { status: 500 })
+      )
+    );
+    renderWithProviders(<BooksListPage />);
+    expect(await screen.findByText(/server exploded/i)).toBeInTheDocument();
+  });
+
+  it("shows the loading spinner before data arrives", async () => {
+    renderWithProviders(<BooksListPage />);
+    expect(screen.getByRole("status", { name: "Loading" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
   });
 });
 ```
 
-### 5.10 Run all tests
+`<Loading />` already exposes `role="status"` + `aria-label="Loading"`, so it is queryable without a test id — use that rather than sprinkling `data-testid` attributes through production components.
 
-```bash
-cd bookly-frontend && npx vitest run
+### 5.11 Write sample test: TagEditor (hover/focus remove + add)
+
+**File:** `src/features/tags/__tests__/TagEditor.test.tsx`
+
+Highest-value test in Phase 5: it locks in the §4.8 interaction decisions that were easy to get wrong (hover reveal, keyboard reachability, no reflow).
+
+```tsx
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
+import { renderWithProviders } from "../../../test/utils";
+import TagEditor from "../TagEditor";
+import type { TagOut } from "../../../types/tags";
+
+const tags: TagOut[] = [
+  { uid: "tag-1", name: "classic", created_at: "2024-01-01T00:00:00" },
+  { uid: "tag-2", name: "sci-fi", created_at: "2024-01-01T00:00:00" },
+];
+
+function renderEditor(overrides: TagOut[] = tags) {
+  return renderWithProviders(<TagEditor bookUid="book-1" tags={overrides} />);
+}
+
+describe("TagEditor", () => {
+  it("renders a chip per attached tag with a labelled remove button", () => {
+    renderEditor();
+    expect(screen.getByText("classic")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove tag classic" })).toBeInTheDocument();
+  });
+
+  it("shows the empty state with no tags", () => {
+    renderEditor([]);
+    expect(screen.getByText(/no tags yet/i)).toBeInTheDocument();
+  });
+
+  it("keeps the remove button hidden at rest and reveals it on focus", async () => {
+    renderEditor();
+    const remove = screen.getByRole("button", { name: "Remove tag classic" });
+    // opacity-0 at rest; group-hover:opacity-100 / focus-visible:opacity-100
+    expect(remove).toHaveClass("opacity-0");
+    remove.focus();
+    await waitFor(() => expect(remove).toHaveFocus());
+    expect(remove.className).toContain("focus-visible:opacity-100");
+  });
+
+  it("does not reserve horizontal space for the remove button", () => {
+    renderEditor();
+    // Guards against reintroducing the transition-[padding-right] approach.
+    expect(screen.getByText("classic").className).not.toContain("padding-right");
+  });
+
+  it("excludes already-attached tags from the picker suggestions", async () => {
+    renderEditor();
+    const input = screen.getByPlaceholderText(/add a tag/i);
+    const options = Array.from(
+      (input as HTMLInputElement).list?.options ?? []
+    ).map((o) => o.value);
+    expect(options).not.toContain("classic");
+  });
+
+  it("disables Add for an empty input and for a duplicate name", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+    const add = screen.getByRole("button", { name: "Add" });
+
+    expect(add).toBeDisabled();
+    await user.type(screen.getByPlaceholderText(/add a tag/i), "classic");
+    expect(add).toBeDisabled();
+  });
+
+  it("rejects an empty tag name without a network request", async () => {
+    const user = userEvent.setup();
+    renderEditor([]);
+    await user.type(screen.getByPlaceholderText(/add a tag/i), "   ");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+  });
+});
 ```
 
-Confirm all tests pass with no type errors.
+- jsdom does not evaluate `:hover` from `userEvent.hover`, so assert the **class contract** (`opacity-0` + the `group-hover:`/`focus-visible:` variants) rather than computed visibility. That is the part a refactor would actually break.
+- The duplicate-name case needs no MSW handler override: `alreadyAttached` short-circuits before the request, so the Add button is simply disabled.
 
-### 5.11 Type-check the entire project
-
-```bash
-cd bookly-frontend && npx tsc --noEmit
-```
-
-Fix any type errors. Common issues:
-- Missing `key` prop on mapped elements
-- Non-null assertions on `useParams()` values
-- `AxiosResponse` unwrapping (`data` property)
-
-### 5.12 Update `frontend/README.md`
-
-Document:
-- Project name and description
-- Tech stack (Vite, React, TypeScript, TanStack Query, Zustand, Axios, React Router)
-- Setup instructions (`npm install`, `.env` configuration, `npm run dev`)
-- Auth flow diagram (login → token storage → interceptor refresh → logout)
-- API endpoints covered
-- Testing instructions (`npm test`)
-- Screenshot placeholder
-
-### 5.13 Lint check (if ESLint is configured)
+### 5.12 Run all tests
 
 ```bash
-cd bookly-frontend && npx eslint src/
+cd bookly-frontend && npm test           # vitest run
+npm run test:watch                       # watch mode while iterating
+npm run test:coverage                    # v8 coverage report
 ```
 
-Fix any linting warnings. Vite's `react-ts` template comes with ESLint pre-configured.
+Confirm all tests pass. If MSW reports an unhandled request, a handler path or the `BASE` constant is wrong — read the reported URL rather than switching `onUnhandledRequest` to `"bypass"`, which hides the bug.
+
+### 5.13 Type-check the entire project
+
+```bash
+cd bookly-frontend && npm run build
+```
+
+Use `npm run build` (`tsc -b && vite build`) rather than the original `npx tsc --noEmit`: the project uses TS project references, and `--noEmit` cannot be combined with the referenced composite projects. `tsc -b` covers app + node config + the new test project (§5.5), so a type error anywhere in `src` — including tests — fails the command.
+
+Expected issues when first adding tests:
+- `describe`/`it`/`expect` unresolved → the `types` array is missing `vitest/globals` (§5.5).
+- `toBeInTheDocument()` unresolved → import `@testing-library/jest-dom/vitest`, and make sure the test project includes its types.
+- `Cannot find name 'React'` in a test helper → use `import type { ReactElement } from "react"`, not bare `React.*` (§5.7).
+- `verbatimModuleSyntax` violations → type-only imports must use `import type`.
+
+### 5.14 Update `frontend/README.md` — DONE
+
+Already complete (verified in this pass). The README documents the project description, tech stack, setup (`.env`, `npm run dev`), scripts, a `src/` structure tree, a Features → Tags section, and the **Tests** line. One line remains to change once §5.5 lands:
+
+```
+**Tests**: `npm test` (Vitest + React Testing Library + MSW). `npm run test:watch` for watch mode, `npm run test:coverage` for the v8 report. Requires no running backend — MSW intercepts every request.
+```
+
+Also update the Tech Stack bullet that currently reads "no dedicated test framework".
+
+### 5.15 Lint + final gate
+
+```bash
+cd bookly-frontend && npm run lint      # eslint . — the repo's script, not `npx eslint src/`
+npm run build
+npm test
+```
+
+All three must be clean. `eslint .` covers the new `*.test.ts(x)` and `src/test/**` files too, so unused imports in test helpers are caught here rather than at build time.
+
+Watch for `react-refresh/only-export-components` firing on a test helper that exports both a component and a helper — co-locating `renderWithProviders` in `src/test/utils.tsx` (a non-route file) is what keeps it quiet.
 
 ---
 
 ## Cross-cutting concerns
 
-### Backend email link repointing
+### Backend email link repointing — RESOLVED (Phase 2)
 
-Currently, the backend sends email links pointing to `http://localhost:8000/api/v1/auth/verify/{token}` (raw JSON). To redirect to the frontend:
+The original note offered "copy the token manually" as Option A. That is no longer needed: Phase 2 gave the emailed routes **absolute** frontend paths in `router.tsx`, so the backend's existing links land directly on the SPA and React Router renders the right page.
 
-1. **Option A (recommended for now):** Keep backend links as-is; user copies token manually to frontend URL `/verify/{token}`
-2. **Option B (later):** Change `src/auth/routes.py:64` and `src/auth/routes.py:227` to point to `http://localhost:5173/verify/{token}` and `http://localhost:5173/reset-password/{token}` respectively
+- Backend sends `http://{Config.DOMAIN}/api/v1/auth/verify/{token}` (`src/auth/routes.py:64`) and the equivalent for password reset.
+- Frontend registers `/api/v1/auth/verify/:token` and `/api/v1/auth/password-reset-confirm/:token` (plus relative paths `login`, `signup`, `password-reset-request` for UI navigation only).
+
+No backend change is required. The consequence to remember: **any new emailed link needs a matching absolute route in `router.tsx`**, and a bare `/verify/:token` route will never be hit by an email.
 
 ### CORS
 
@@ -3804,5 +4184,9 @@ Backend already has CORS set to `*` (confirmed in `src/middleware.py`), so no ba
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `VITE_API_BASE_URL` | `bookly-frontend/.env` | Base URL for all API calls |
+| `VITE_API_BASE_URL` | `bookly-frontend/.env` | Base URL for all API calls. Also read by the MSW handlers in Phase 5 (§5.6) so test routes cannot drift from the real one. |
 | `JWT_SECRET`, `JWT_ALGORITHM`, etc. | Backend `.env` | Not exposed to frontend |
+
+### Phase 5 scope boundary
+
+Phase 5 is frontend-only. The backend is unchanged and stays at **124 tests** (`pytest tests/ -v`). Do not add backend endpoints, migrations, or fixtures while doing Phase 5 — if a test seems to need one, the handler in `src/test/mocks/handlers.ts` is the right place to fake it instead.
