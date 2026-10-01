@@ -83,7 +83,7 @@
   - [4.5 Build `<ReviewForm />` — DETAILED SPEC](#45-build-reviewform---detailed-spec)
   - [4.6 Wire Phase 4 into `<BookDetailPage />` — DETAILED SPEC](#46-wire-phase-4-into-bookdetailpage---detailed-spec)
   - [4.7 Build `<TagChips />` (display-only) — DETAILED SPEC](#47-build-tagchips--display-only--detailed-spec)
-  - [4.8 Tags API + administration — DEFERRED](#48-tags-api--administration--deferred)
+  - [4.8 Build tags add/remove (`TagEditor`) — DETAILED SPEC](#48-build-tags-addremove-tageditor--detailed-spec)
   - [4.9 Router — no changes in Phase 4](#49-router--no-changes-in-phase-4)
   - [4.10 Verification — DETAILED SPEC](#410-verification--detailed-spec)
 - [Phase 5 — Polish + Tests](#phase-5--polish--tests)
@@ -196,9 +196,10 @@ src/
       api.ts                # Reviews axios calls — BUILT (Phase 4 §4.1)
       queries.ts            # useAddReview, useDeleteReview — BUILT (Phase 4 §4.2)
     tags/
-      TagChips.tsx          # Display-only chips (borrows tags from BookDetailOut) — to build (Phase 4 §4.7)
-      api.ts                # Empty placeholder — DEFERRED (Phase 4 §4.8); no tags calls yet
-      queries.ts            # Not created — DEFERRED (Phase 4 §4.8); no Tag add/remove, no TagsListPage
+      TagChips.tsx          # Display-only chips for list cards — BUILT (Phase 4 §4.7)
+      TagEditor.tsx         # Add/remove tag UI for BookDetailPage — to build (Phase 4 §4.8)
+      api.ts                # Tags axios calls (getTags/addTagsToBook/removeTagFromBook) — to build (Phase 4 §4.8)
+      queries.ts            # useTags/useAddTagsToBook/useRemoveTagFromBook — to build (Phase 4 §4.8)
   components/
     Layout.tsx              # NavBar + <Outlet />
     NavBar.tsx              # Links — conditional on auth state
@@ -1822,7 +1823,7 @@ import ResetAccountPassword from "./features/auth/ResetAccountPassword";
 
 ### 2.8 Build shared components — DETAILED SPEC
 
-Four shared components live in `src/components/`. All four now exist on disk (synced from the codebase). `<Layout />` is **wired into `App.tsx`** (App renders `<Layout />`, so the NavBar + `main` + `<Outlet />` shell wraps every route). `<ProtectedRoute />` is built here and **mounted in Phase 3 §3.6** as a pathless layout route wrapping the books routes — until then the auth routes remain public children of `<App />`. A **fifth** shared component, `<ConfirmDialog />`, is added in Phase 3 §3.5 (reused there for book-delete and later in Phase 4 for review-delete confirmation — Phase 4 has no tag deletion, see §4.7/§4.8).
+Four shared components live in `src/components/`. All four now exist on disk (synced from the codebase). `<Layout />` is **wired into `App.tsx`** (App renders `<Layout />`, so the NavBar + `main` + `<Outlet />` shell wraps every route). `<ProtectedRoute />` is built here and **mounted in Phase 3 §3.6** as a pathless layout route wrapping the books routes — until then the auth routes remain public children of `<App />`. A **fifth** shared component, `<ConfirmDialog />`, is added in Phase 3 §3.5 (reused there for book-delete and later in Phase 4 for review-delete confirmation; tag removal is a per-book unpin with no confirmation — see §4.7/§4.8).
 
 **Files touched:**
 
@@ -2247,7 +2248,7 @@ export const useBookInfoViaAgent = () =>
 
 Design decisions:
 - `useBooks()` query; branch on `isLoading` → `<Loading />`, `isError` → `<ErrorMessage />`, empty list → empty-state CTA, else grid of cards.
-- Each card is a `<Link to={/books/${book.uid}}>` showing title, author, publisher, language, and tag chips (`book.tags.map`). Phase 4 replaces the inline chips with the shared `<TagChips />` (§4.7).
+- Each card is a `<Link to={/books/${book.uid}}>` showing title, author, publisher, language, and tag chips (`book.tags.map`). Phase 4 replaces the inline chips with the shared `<TagChips />` (§4.7); the detail page uses the interactive `<TagEditor />` (§4.8).
 - A prominent "Create Book" button → `/books/new`.
 - Page shell: the `Layout` (NavBar) already wraps all routes via `App`, so this page only renders its content column.
 
@@ -2573,7 +2574,7 @@ Design decisions:
 
 ### 3.5 Build `<ConfirmDialog />` + `<BookDetailPage />` — DETAILED SPEC
 
-Phase 3 adds the **fifth shared component** `<ConfirmDialog />` (reused later in Phase 4 for review deletes — Phase 4 has no tag deletion, §4.8) and uses it on `BookDetailPage` for the delete action.
+Phase 3 adds the **fifth shared component** `<ConfirmDialog />` (reused later in Phase 4 for review deletes; tags are not deleted via a dialog — they are unpinned per-book in §4.8) and uses it on `BookDetailPage` for the delete action.
 
 #### 3.5.1 `<ConfirmDialog />` (reusable shared component)
 
@@ -2678,7 +2679,7 @@ Design decisions:
 - A **"← Back to books"** link (`ArrowLeft`) sits above the header.
 - States: `isLoading` → `<Loading />`; `isError || !book` → `<ErrorMessage error={error} />` (covers 404 `book_not_found`).
 - Delete errors surface **full-width above the header** (not as a flex item beside the heading/buttons) via `deleteMutation.isError`.
-- Displays all backend fields; renders placeholders for `<TagChips />`, `<ReviewList />`, `<ReviewForm />` — wired in Phase 4.
+- Displays all backend fields; renders placeholders for `<TagEditor />`, `<ReviewList />`, `<ReviewForm />` — wired in Phase 4 (§4.6/§4.8).
 - **Edit** → `<Link to={/books/${book.uid}/edit}>` (edit route renders `<BookEditPage />`, §3.4.1).
 - **Delete** → open the **inline `<ConfirmDialog />`** via `showDeleteConfirmDialog` state; on confirm → `useDeleteBook().mutateAsync(uid)` → `navigate("/books")`; on cancel or **Escape** → close. No `window.confirm`. `useDeleteBook` invalidates with `refetchType: "none"`, so the stale detail query isn't refetched to a 404; the list refetches on mount.
 
@@ -2765,7 +2766,7 @@ export default function BookDetailPage() {
           {book.published_date}
         </p>
       </div>
-      {/* -- Phase 4: <TagChips bookUid={uid} tags={book.tags} /> -- */}
+      {/* -- Phase 4: <TagEditor bookUid={uid} tags={book.tags} /> -- */}
       {/* -- Phase 4: <ReviewList reviews={book.reviews} -- /> */}
       {/* -- Phase 4: <ReviewForm bookUid={uid} /> -- */}
 
@@ -2854,7 +2855,7 @@ The `NavBar` already renders a "Books" link pointing to `/books` (built in §2.8
 ---
 
 ## Phase 4 — Reviews + Tags
-Reviews are added/deleted **inline on `BookDetailPage`**. Tags are **display-only**: the frontend renders exactly what the backend returns (`book.tags`) — no add/remove UI, no tags API helpers, no `TagsListPage`/`/tags` route. All tag *administration* is **deferred** (§4.8). Reviews and tags are both nested inside `BookDetailOut`, so every review mutation invalidates the book detail query (§4.2); nothing here touches `bookKeys.all` except book CRUD (§3.2).
+Reviews are added/deleted **inline on `BookDetailPage`**. Tags are **editable inline too**: the `<TagEditor />` (§4.8) adds a tag (free text + existing-tag picker) and removes a tag from the book while **keeping the `Tag` row** in the database. Display-only `<TagChips />` (§4.7) renders a book's tags on the `/books` list cards. `book.reviews` and `book.tags` both nest inside `BookDetailOut`: review mutations invalidate the book detail query (§4.2); tag add/remove mutations invalidate `bookKeys.detail(uid)` and `bookKeys.all` (list-card chips), plus `tagKeys.all` on add (find-or-create may add a picker entry) (§4.8).
 
 ### 4.1 Build reviews API helper (`src/features/reviews/api.ts`) — ALREADY BUILT (synced from disk)
 
@@ -3164,7 +3165,7 @@ export default function ReviewForm({ bookUid }: { bookUid: string }) {
 Replace the three Phase-4 placeholder comments (currently `{/* -- Phase 4: ... -- */}` after the metadata box) with the real components, plus three imports:
 
 ```tsx
-import TagChips from "../tags/TagChips";
+import TagEditor from "../tags/TagEditor";
 import ReviewList from "../reviews/ReviewList";
 import ReviewForm from "../reviews/ReviewForm";
 ```
@@ -3173,22 +3174,21 @@ import ReviewForm from "../reviews/ReviewForm";
       </div>
       {/* -- Phase 3 metadata box ends above -- */}
 
-      <div className="mt-6">
-        <TagChips tags={book.tags} />
-      </div>
+      <TagEditor bookUid={uid} tags={book.tags} />
       <ReviewList bookUid={uid} reviews={book.reviews} />
       <ReviewForm bookUid={uid} />
 ```
 
 - `uid` is non-`null` at this point (guarded by `if (!uid) return <Navigate …/>`, §3.5.2), so `bookUid={uid}` needs no `!`.
-- `book.reviews` and `book.tags` come straight from `BookDetailOut`; add/delete review mutations invalidate `bookKeys.detail(uid)` → `useBook` refetches → props refresh automatically. No local state fork of the lists.
+- `book.reviews` and `book.tags` come straight from `BookDetailOut`; mutations refresh props automatically — review mutations and tag add/remove mutations both invalidate `bookKeys.detail(uid)` → `useBook` refetches. No local state fork of the lists.
+- `<TagEditor />` (add/remove chips) is specified in **§4.8**; `<TagChips />` is **not** mounted on the detail page — display-only chips live on the `BooksListPage` cards (§4.7).
 - No other page changes: the metadata box, Edit/Delete header row and the book-delete `<ConfirmDialog />` stay exactly as in §3.5.2.
 
 ### 4.7 Build `<TagChips />` (display-only) — DETAILED SPEC
 
-**File:** `src/features/tags/TagChips.tsx`
+**File:** `src/features/tags/TagChips.tsx` — **BUILT** (synced from disk).
 
-Scope decision (agreed): **render-only** — "the frontend renders what is found from the backend." No add input, no remove button.
+Scope decision: **render-only** chips reused on the **`/books` list cards** (each `BookOut` nests `tags`). The detail page uses the interactive `<TagEditor />` instead (§4.8).
 
 ```tsx
 import type { TagOut } from "../../types/tags";
@@ -3211,44 +3211,240 @@ export default function TagChips({ tags }: { tags: TagOut[] }) {
 ```
 
 Design decisions:
-- Props `{ tags: TagOut[] }` only — no `bookUid` (no API calls here). Renders `book.tags`/`book-out.tags` whichever the parent passes.
-- Empty list → renders `null` (cleanest; the parent decides whether to show a "No tags" line).
-- Reused in **two** places (fulfils the §3.3 note that "Phase 4 replaces the inline chips with the shared `<TagChips />`"):
-  1. `BooksListPage` cards — replace the inline `book.tags.map(...)` chip block with `<TagChips tags={book.tags} />`.
-  2. `BookDetailPage` — mount above the reviews (§4.6).
-- If the book has no tags, the wrapper `<div className="mt-6">` on the detail page renders empty below the metadata box — acceptable (no visible gap beyond normal section spacing).
+- Props `{ tags: TagOut[] }` only — no `bookUid` (no API calls here).
+- Empty list → renders `null` (the parent decides on empty-state copy).
+- Mounted in **one** place: `BooksListPage` cards — replace the inline `book.tags.map(...)` chip block (design note §3.3) with `<TagChips tags={book.tags} />`. The card's `book.tags.length > 0` guard becomes redundant (TagChips returns `null` when empty) and can be dropped.
+- The trailing comments in the on-disk file ("Add Tag to a book, tag already existed" / "Remove a tag from a book but keep it in the db") describe the intended add/remove flow — now implemented by `<TagEditor />` (§4.8).
 
-**Why removal is out of scope:** the backend has **no per-book tag-removal endpoint**. `DELETE /tags/{tag_uid}` deletes the `Tag` **globally** (removed from every book at once) — not what a per-book "x" means. Adding that UI now would either lie about the semantics or silently delete shared tags. When real tag administration lands (§4.8), an `add`/per-book-remove flow can be designed against a proper backend endpoint.
+### 4.8 Build tags add/remove (`TagEditor`) — DETAILED SPEC
 
-### 4.8 Tags API + administration — DEFERRED
+Add + remove tags **inline on `BookDetailPage`**. "Remove" is **per-book**: it deletes the `BookTag` link row and keeps the `Tag` in the database (the tag stays shared across any other books). Tag *creation* happens implicitly through the add flow (find-or-create). No `TagsListPage`/`/tags` UI route — administration is inline (see §4.9).
 
-Deliberately **not built in Phase 4** (agreed scope). On disk: `src/features/tags/api.ts` is an **empty file**; `src/features/tags/queries.ts` does **not** exist. No `TagChips` add/remove, no `TagsListPage`, no `/tags` route.
-
-Reference contract preserved here for when tag administration is picked up:
+**Backend contract (BUILT & tested — tags suite 35 tests, full suite 124 passed):**
 
 | Function | Backend route | Auth required | Request body | Response |
 |---|---|---|---|---|
-| `getTags()` | `GET /tags/` | User/Admin | — | `TagOut[]` |
-| `createTag(data)` | `POST /tags/` | User/Admin | `{ name }` | `TagOut` (201) |
-| `addTagsToBook(bookUid, data)` | `POST /tags/book/{book_uid}/tags` | User/Admin | `{ tags: [{ name }] }` | `BookOut` |
-| `updateTag(uid, data)` | `PUT /tags/{uid}` | User/Admin | `{ name }` | `TagOut` |
-| `deleteTag(uid)` | `DELETE /tags/{uid}` | User/Admin | — | 204 (empty; deletes the tag **globally**) |
+| `getTags()` | `GET /tags/` | User/Admin | — | `TagOut[]` (newest first) |
+| `addTagsToBook(bookUid, names)` | `POST /tags/book/{book_uid}/tags` | User/Admin | `{ tags: [{ name }] }` | `BookOut` (200) |
+| `removeTagFromBook(bookUid, tagUid)` | `DELETE /tags/book/{book_uid}/tags/{tag_uid}` | User/Admin | — | `BookOut` (200; idempotent — no-op if the tag is absent) |
 
-Error shapes: `TagNotFound` 404 `{ message: "Tag Not Found", error_code: "tag_not_found" }`; `TagAlreadyExists` 403 `{ message: "Tag Already exists", error_code: "tag_exists" }`.
+Global tag ops (`POST /tags/`, `PUT /tags/{uid}`, `DELETE /tags/{uid}`) exist on the backend but are **out of scope** here — there is no tags-admin page. `DELETE /tags/{uid}` deletes a tag globally; do *not* wire it to the chip's ×.
 
-Deferred queries sketch (would-be invalidation targets): global ops `getTags/createTag/updateTag/deleteTag` invalidate `tagKeys.all` (`["tags"]`); `addTagsToBook(bookUid)` invalidates **both** `bookKeys.detail(bookUid)` and `bookKeys.all` (list cards render chips too).
+Two backend hardening changes shipped with this feature:
+- `add_tags_to_book` skips tags already linked to the book and dedupes repeated names within one payload (a duplicate `BookTag` row violates the composite PK → 500). The UI already sends one name per request, so this is defense-in-depth.
+- uid-based tag lookups return `None`/404 for malformed uids instead of a 500.
+
+Error shapes the frontend renders via `parseApiError()`: `BookNotFound` 404 `{ message: "Book Not Found", error_code: "book_not_found" }` (both add/remove); `TagNotFound` 404 `{ message: "Tag Not Found", error_code: "tag_not_found" }` and `TagAlreadyExists` 403 `{ message: "Tag Already exists", error_code: "tag_exists" }` apply to the **global** `POST /tags/` route, which the picker does not call (find-or-create never 403s). The remove path deliberately does **not** 404 on a missing tag (idempotent DELETE).
+
+**`src/features/tags/api.ts` (fills the empty placeholder):**
+
+```ts
+import apiClient from "../../lib/apiClient";
+import type { BookOut } from "../../types/books";
+import type { TagOut } from "../../types/tags";
+
+const PREFIX = "tags";
+
+export const getTags = () => apiClient.get<TagOut[]>(`/${PREFIX}/`);
+
+export const addTagsToBook = (bookUid: string, names: string[]) =>
+  apiClient.post<BookOut>(`/${PREFIX}/book/${bookUid}/tags`, {
+    tags: names.map((name) => ({ name })),
+  });
+
+export const removeTagFromBook = (bookUid: string, tagUid: string) =>
+  apiClient.delete<BookOut>(`/${PREFIX}/book/${bookUid}/tags/${tagUid}`);
+```
+
+No type changes — `TagOut`/`TagAdd` already exist (§1.6); add/remove responses are typed with the existing `BookOut` (§1.6).
+
+**`src/features/tags/queries.ts` (new):**
+
+```ts
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { addTagsToBook, getTags, removeTagFromBook } from "./api";
+import { bookKeys } from "../books/queries";
+
+export const tagKeys = { all: ["tags"] as const };
+
+export const useTags = () =>
+  useQuery({
+    queryKey: tagKeys.all,
+    queryFn: async () => {
+      const { data } = await getTags();
+      return data;
+    },
+  });
+
+export const useAddTagsToBook = (bookUid: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (names: string[]) => addTagsToBook(bookUid, names),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: bookKeys.detail(bookUid) });
+      qc.invalidateQueries({ queryKey: bookKeys.all }); // list-card chips
+      qc.invalidateQueries({ queryKey: tagKeys.all }); // find-or-create may add a picker entry
+    },
+  });
+};
+
+export const useRemoveTagFromBook = (bookUid: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tagUid: string) => removeTagFromBook(bookUid, tagUid),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: bookKeys.detail(bookUid) });
+      qc.invalidateQueries({ queryKey: bookKeys.all }); // the tag itself persists
+    },
+  });
+};
+```
+
+Invalidation rationale: add can *create* a new `Tag` row, so the picker's `tagKeys.all` is refreshed too; remove keeps the tag, so `tagKeys` is untouched. `bookKeys.all` is invalidated by both because `BookOut` (list cards) nests `tags`.
+
+**`src/features/tags/TagEditor.tsx` (new):**
+
+Props `{ bookUid: string; tags: TagOut[] }`. Renders the book's tags as chips (previous `TagChips` styling) each with an `×`-remove button, plus a "Tags" card with a free-text add input wired to a native `<datalist>` of all existing tags (`GET /tags/`).
+
+```tsx
+import { useState, type SyntheticEvent } from "react";
+import { X } from "lucide-react";
+import type { TagOut } from "../../types/tags";
+import { useAddTagsToBook, useRemoveTagFromBook, useTags } from "./queries";
+import ErrorMessage from "../../components/ErrorMessage";
+
+export default function TagEditor({
+  bookUid,
+  tags,
+}: {
+  bookUid: string;
+  tags: TagOut[];
+}) {
+  const { data: allTags } = useTags();
+  const addMutation = useAddTagsToBook(bookUid);
+  const removeMutation = useRemoveTagFromBook(bookUid);
+  const [newTag, setNewTag] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const name = newTag.trim();
+  const alreadyAttached = tags.some((t) => t.name === name);
+
+  async function handleAdd(e: SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!name) {
+      setValidationError("Enter a tag name.");
+      return;
+    }
+    if (alreadyAttached) return; // backend would no-op; skip the request
+    setValidationError(null);
+    await addMutation.mutateAsync([name]);
+    setNewTag("");
+  }
+
+  async function handleRemove(tagUid: string) {
+    await removeMutation.mutateAsync(tagUid);
+  }
+
+  return (
+    <section className="mt-6 rounded-lg border border-gray-200 bg-white p-4">
+      <h2 className="mb-3 text-sm font-semibold text-gray-900">Tags</h2>
+
+      {(addMutation.isError || removeMutation.isError || validationError) && (
+        <div className="mb-4">
+          <ErrorMessage
+            error={
+              addMutation.isError
+                ? addMutation.error
+                : removeMutation.isError
+                  ? removeMutation.error
+                  : { message: validationError ?? "", error_code: "validation" }
+            }
+          />
+        </div>
+      )}
+
+      {tags.length === 0 && (
+        <p className="mb-2 text-sm text-gray-500">No tags yet — add one below.</p>
+      )}
+
+      <div className="mb-3 flex flex-wrap gap-1">
+        {tags.map((tag) => (
+          <span
+            key={tag.uid}
+            className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700"
+          >
+            {tag.name}
+            <button
+              type="button"
+              onClick={() => handleRemove(tag.uid)}
+              disabled={removeMutation.isPending}
+              aria-label={`Remove tag ${tag.name}`}
+              className="rounded-full hover:bg-purple-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
+
+      <form onSubmit={handleAdd} className="flex gap-2">
+        <input
+          value={newTag}
+          onChange={(e) => setNewTag(e.target.value)}
+          list="existing-tags"
+          placeholder="Add a tag…"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+        />
+        <datalist id="existing-tags">
+          {allTags
+            ?.filter((t) => !tags.some((attached) => attached.name === t.name))
+            .map((t) => (
+              <option key={t.uid} value={t.name} />
+            ))}
+        </datalist>
+        <button
+          type="submit"
+          disabled={addMutation.isPending || !name || alreadyAttached}
+          aria-busy={addMutation.isPending}
+          className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {addMutation.isPending ? "Adding…" : "Add"}
+        </button>
+      </form>
+    </section>
+  );
+}
+```
+
+Design decisions:
+- **Picker = native `<datalist>`**: the input's `list="existing-tags"` shows all existing tag names (`useTags()` → `GET /tags/`) as type-ahead suggestions — zero extra picker chrome. Selecting/typing an existing name goes through the same find-or-create POST as a new name (one request per tag; no 403 from the global create route).
+- Already-attached tags are filtered out of the `<datalist>` options.
+- **Client-side guards mirror the backend**: Add is disabled when the input is empty or the trimmed name already matches a chip (case-sensitive, same set semantics as the service's `book_tag_names` guard).
+- **Remove is immediate, no `ConfirmDialog`**: it's a per-book unpin and recoverable by re-adding — matches `TagChips`'s "Remove a tag from a book but keep it in the db". `×` buttons disable while the remove mutation is pending (`aria-label` per chip).
+- **Errors render once** via `<ErrorMessage />` with the `ReviewForm` aliasing trick: server error (`addMutation.error`/`removeMutation.error`) or local `{ message: validationError, error_code: "validation" }` — `parseApiError` (duck-type branch) renders all three shapes (§1.9).
+- **`SyntheticEvent<HTMLFormElement>`** submit handler (React 19 — `FormEvent` is deprecated, §2.4).
+- Empty state: "No tags yet — add one below." only when `tags.length === 0`.
+
+**Wiring recap (honours the §3.3 design note):**
+- `BookDetailPage.tsx` — `<TagChips tags={book.tags} />` → `<TagEditor bookUid={uid} tags={book.tags} />` (§4.6).
+- `BooksListPage.tsx` — inline `book.tags.map(...)` chip block → `<TagChips tags={book.tags} />` (§4.7).
+
+**Files:** `src/features/tags/api.ts` (fill), `src/features/tags/queries.ts` (new), `src/features/tags/TagEditor.tsx` (new), `src/features/books/BookDetailPage.tsx`, `src/features/books/BooksListPage.tsx`.
 
 ### 4.9 Router — no changes in Phase 4
 
-`src/router.tsx` stays exactly as wired in §3.6 (public auth routes + `ProtectedRoute`-wrapped books routes). Reviews gain no routes (they render inline on `/books/:uid`); tags gain no routes (§4.8 deferred). Re-verified: no `TagsListPage` import, no `/tags` path.
+`src/router.tsx` stays exactly as wired in §3.6 (public auth routes + `ProtectedRoute`-wrapped books routes). Reviews gain no routes (they render inline on `/books/:uid`); tags gain no routes either — add/remove administration is inline on `/books/:uid` via `<TagEditor />` (§4.8). Re-verified: no `TagsListPage` import, no `/tags` path.
 
 ### 4.10 Verification — DETAILED SPEC
 
 1. `cd bookly-frontend && npm run build` (`tsc -b && vite build`) — clean.
 2. `npm run lint` — clean **including the `types/reviews.ts` fix from §4.3**.
 3. Manual smoke test (backend `fastapi dev src/` on :8000, frontend `npm run dev` on :5173), authenticated verified user with an existing book:
-   - **Rendering:** `/books/{uid}` shows tag chips (if the book has tags) above the reviews section, review list, and "Add a review" form. No add/remove tag controls anywhere.
-   - **Chips:** a book with tags shows chips on its detail page **and** on the `/books` list card (shared `<TagChips />`); a tagless book shows no chip row on either.
+   - **Rendering:** `/books/{uid}` shows the `<TagEditor />` "Tags" card (chips + `×` + add input) above the reviews section, review list, and "Add a review" form.
+   - **Chips:** a book with tags shows `<TagChips />` on its `/books` list card; a tagless book shows no chip row there (TagChips renders `null`).
+   - **Add tag:** on `/books/{uid}`, typing in the input type-aheads existing tag names (pulled from `GET /tags/`); submit "sci-fi" → a chip appears on the detail page **and** on the `/books` list card, and "sci-fi" becomes a picker suggestion for other books.
+   - **Re-add/duplicate:** Add stays disabled while the trimmed name matches an attached chip; empty input → inline "Enter a tag name." with **zero network requests**.
+   - **Remove tag:** `×` on a chip → row disappears from detail + list card; the tag still exists globally (adding it to a *different* book confirms the `Tag` row was kept).
    - **Add review:** tap the 5th star → inline `5/5`; empty review → inline "Please write a review.", **zero network requests**; valid submit → review appears in the list, form resets.
    - **Duplicate:** submitting a second review for the same book → red banner "Review Already Exists From The Current User" (409).
    - **Rating render:** list shows the filled-star rating; review text + short date visible.
