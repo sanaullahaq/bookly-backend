@@ -59,17 +59,42 @@ Start the server:
 fastapi dev src/
 ```
 
+Start a Celery worker in a separate terminal. Signup verification and password-reset emails are sent through Celery, so those flows will hang until a worker is running:
+
+```bash
+celery -A src.celery_tasks.c_app worker --loglevel=INFO
+```
+
+Flower (optional task monitor) runs on `:5555`:
+
+```bash
+celery -A src.celery_tasks.c_app flower
+```
+
 ## Run Tests
 
 ```bash
-pytest tests/ -v
+pytest tests/ -v              # everything (124 tests)
+pytest tests/test_tags/ -v    # one package
+pytest tests/ -v -k "test_signup"
+pytest tests/ -x              # stop on first failure
 ```
 
-Requires a `bookly_test` database:
+Tests need **PostgreSQL only**. `tests/conftest.py` overrides the app's DB session and disables SlowAPI rate limits, stubs `send_email.delay`, and bypasses the Redis JTI blocklist — no Redis, Celery, or SMTP needed.
+
+The test database is **hardcoded** in `tests/conftest.py` (it deliberately does not read your `.env`):
+
+```
+postgresql+asyncpg://sanaullahaq:12345@localhost:5432/bookly_test
+```
+
+That database and role must exist, and every table is truncated before each run:
 
 ```sql
 CREATE DATABASE bookly_test;
 ```
+
+Async fixtures must use `@pytest_asyncio.fixture` rather than plain `@pytest.fixture`, even though `pyproject.toml` sets `asyncio_mode = "auto"`.
 
 ## Project Structure
 
@@ -87,9 +112,9 @@ src/
 tests/
 ├── conftest.py     # Shared fixtures (engine, session, client, auth)
 ├── test_auth/      # 30 tests
-├── test_books/     # 32 tests
-├── test_reviews/   # 19 tests
-└── test_tags/      # 23 tests
+├── test_books/     # 33 tests
+├── test_reviews/   # 26 tests
+└── test_tags/      # 35 tests
 ```
 
 ## API Endpoints
@@ -99,6 +124,18 @@ tests/
 | `/api/v1/auth` | Signup, login, logout, refresh, verify, password reset |
 | `/api/v1/books` | Book CRUD |
 | `/api/v1/reviews` | Review CRUD (admin list, user add/delete own) |
-| `/api/v1/tags` | Tag CRUD, add tags to books |
+| `/api/v1/tags` | Tag CRUD, add tags to a book, remove a tag from a book |
 
 Docs at `/api/v1/docs` (Swagger) and `/api/v1/redoc`.
+
+### Tags
+
+Tags are **global** rows joined to books by a `BookTag` link table. That gives three distinct operations, and the difference matters:
+
+| Route | Effect |
+|-------|--------|
+| `POST /tags/book/{book_uid}/tags` | Find-or-create each name, then link it to the book. Returns the updated `BookOut`. Already-linked names and repeated names within one payload are skipped (`BookTag` has a composite PK, so a duplicate row would violate it). |
+| `DELETE /tags/book/{book_uid}/tags/{tag_uid}` | Drops the `BookTag` link only. The `Tag` row survives and stays attached to any other book. Idempotent — removing a tag that was never attached is a no-op returning `200` with the unchanged book, and a malformed `tag_uid` is a no-op rather than a 500. |
+| `DELETE /tags/{tag_uid}` | Deletes the tag **globally**, unlinking it from every book. Never use this for a per-book removal. |
+
+`BookOut` and `BookDetailOut` nest `tags`, so the detail and list responses always reflect the current links.
