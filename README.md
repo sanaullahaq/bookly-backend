@@ -2,6 +2,8 @@
 
 A book review API with authentication, Celery background tasks, rate limiting, and a comprehensive test suite.
 
+**Frontend:** [bookly-frontend](https://github.com/sanaullahaq/bookly-frontend) — the React SPA that consumes this API.
+
 ## Tech Stack
 
 - **Framework**: FastAPI
