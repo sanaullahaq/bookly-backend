@@ -10,13 +10,13 @@ from slowapi.util import get_remote_address
 
 from src.config import Config
 
-logger = logging.getLogger("uvicorn.access")
-logger.disabled = True
 
 # Above code disables the default FastAPI Logging mechanism and starts our own custom logging via below code
 
 
 def register_custom_logging_middleware(app: FastAPI):
+    logger = logging.getLogger("uvicorn.access")
+    logger.disabled = True
 
     @app.middleware("http")
     async def custom_logging(request: Request, call_next):
